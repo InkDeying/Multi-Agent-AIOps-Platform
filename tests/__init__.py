@@ -1,1 +1,0 @@
-"""Repository behavior-contract tests."""
