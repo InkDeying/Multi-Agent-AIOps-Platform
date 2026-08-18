@@ -77,7 +77,7 @@ deep 当前包含 MetricAgent、LogAgent、InfraAgent 和 RunbookAgent。Agent �
 
 ```bash
 git clone https://github.com/InkDeying/Multi-Agent-AIOps-Platform.git
-cd mutil-rag-agent
+cd Multi-Agent-AIOps-Platform
 
 python3.12 -m venv .venv
 source .venv/bin/activate
