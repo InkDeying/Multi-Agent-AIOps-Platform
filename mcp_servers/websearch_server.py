@@ -1,6 +1,6 @@
 """WebSearch MCP server.
 
-仅做硬约束 (黑名单 / 脱敏 / 限频), provider 实现复用 app.core.web_search.
+仅做硬约束 (黑名单 / 脱敏 / 限频), provider 实现复用 app.web_search.
 独立进程, 通过 streamable-http 暴露给主应用.
 """
 
@@ -16,11 +16,11 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 from loguru import logger
 
-# 让独立进程也能 import app.core.web_search
+# 让独立进程也能 import app.web_search
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 load_dotenv()
 
-from app.core.web_search import format_results, get_provider, search  # noqa: E402
+from app.web_search import format_results, get_provider, search  # noqa: E402
 
 mcp = FastMCP(name="WebSearchServer")
 

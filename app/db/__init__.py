@@ -1,2 +1,1 @@
-"""Database helpers for the industrial Incident pipeline."""
-
+"""Postgres connection, schema initialization, and persistence helpers."""

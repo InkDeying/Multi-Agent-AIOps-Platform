@@ -8,8 +8,8 @@ from langchain_core.messages import HumanMessage
 from loguru import logger
 
 from app.config import settings
-from app.core.llm import get_chat_llm
-from app.runtime.agent_harness import get_agent_harness
+from app.harness.core.llm import get_chat_llm
+from app.harness.runtime.agent_harness import get_agent_harness
 import app.services.chat_memory as chat_memory
 from app.services.rag.message_utils import content_to_text, format_history
 

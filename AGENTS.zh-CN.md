@@ -120,14 +120,19 @@ python benchmark/run_benchmark.py ragas --limit 5
 | `app/api/` | HTTP/SSE 入口和请求响应契约 |
 | `app/services/` | 诊断、RAG Chat 等用例服务 |
 | `app/orchestration/` | 诊断模式选择、执行、审计和事件转换 |
-| `app/agents/` | fast 图节点和 deep 专业 Agent |
-| `app/diagnosis_graphs/` | deep 诊断图装配与证据归并 |
-| `app/runtime/` | Agent Harness、权限、审批、工具编排、预算和状态转换 |
-| `app/skills/` | Skill 模型、加载器、注册表、Playbook 和 Skill 文档 |
-| `app/tools/`、`mcp_servers/` | 工具元数据、本地工具和外部 MCP 进程边界 |
+| `app/agents/fast/` | fast 图、状态和 Skill-Plan-Execute-Replan 节点 |
+| `app/agents/deep/` | deep 图、状态、专业节点、证据归并、RCA 和报告 |
+| `app/agents/delegates/` | 可复用的 `delegate_to_*` Agent 定义和工具适配器 |
+| `app/harness/core/` | LLM 工厂、解析、结构化输出、Provider 适配和 Harness 通用能力 |
+| `app/harness/rag/` | Embedding、文档切分、Milvus、向量/混合检索和 Rerank |
+| `app/harness/mcp/` | MCP 客户端生命周期和 Lazy MCP 工具暴露 |
+| `app/harness/runtime/` | Agent Harness、权限、审批、工具编排、预算和状态转换 |
+| `app/harness/skills/` | Skill 模型、加载器、注册表、Playbook 和 Skill 文档 |
+| `app/harness/tools/` | 工具元数据、本地工具、基础工具加载和工具目录 |
+| `app/harness/wiki/` | 运行时 LLM Wiki 经验存储与召回 |
 | `app/incidents/`、`app/evidence/`、`app/db/` | 事件、证据、持久化和 Schema |
-| `app/queue/` | Redis Streams、Worker 协调和队列可观测性 |
-| `app/core/`、`app/rag/` | Provider 客户端、Embedding、检索、Rerank 和共享基础设施 |
+| `app/queue/` | Redis Streams、Worker 协调、分布式并发槽、接口限流和队列可观测性 |
+| `mcp_servers/` | 外部 MCP 进程边界 |
 | `benchmark/` | 检索/RAG 评测数据集、运行器和生成报告 |
 | `data/kb_corpus/` | 版本化公开 RAG 语料，不是运维文档 |
 | `data/wiki/` | 运行时经验库，只提交约定文件 |
@@ -160,7 +165,7 @@ python benchmark/run_benchmark.py ragas --limit 5
 以下区域的修改需要聚焦证据，通常还需单独确认：
 
 - `.env.example` 与 `app/config.py`：Provider 选择、凭证、公共端点、并发和安全默认值。
-- `app/runtime/permissions.py`、`tool_filter.py`、`tool_runner.py` 和 `approvals.py`：
+- `app/harness/runtime/permissions.py`、`tool_filter.py`、`tool_runner.py` 和 `approvals.py`：
   对外安全与副作用边界。
 - `mcp_servers/docker_server.py`：包含重启操作，不能把所有 Docker 工具视为只读。
 - `app/db/postgres.py`：Schema 与持久化兼容性。
@@ -172,12 +177,13 @@ python benchmark/run_benchmark.py ragas --limit 5
 
 ## 7. 验证要求
 
-仓库目前没有已提交的 `tests/` 测试套件、`pyproject.toml` 或 CI Workflow。不能声称不存在的
-单元、集成或端到端覆盖率。
+仓库已有聚焦行为契约的 `unittest` 测试，但仍没有 `pyproject.toml` 或 CI Workflow。不能把
+这些测试描述为 Provider、数据库、MCP、集成或端到端覆盖率。
 
 安全基线检查：
 
 ```bash
+python -m unittest discover -s tests -v
 ruff check app mcp_servers benchmark scripts
 python -m compileall -q app mcp_servers benchmark scripts
 docker compose config --quiet

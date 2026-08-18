@@ -1,10 +1,10 @@
 """RAG 单智能体聊天服务 (流式编排).
 
 仅负责把各子模块拼成 SSE 事件流, 具体逻辑在:
-  - app.rag.retrieval              知识库检索 + context 拼接 (中性原语层)
+  - app.harness.rag.retrieval              知识库检索 + context 拼接 (中性原语层)
   - app.services.rag.web_context   联网搜索 + 安全过滤
   - app.services.rag.memory        query 改写 + 历史压缩
-  - app.runtime.agent_harness      Prompt / 轮次 / 降级策略
+  - app.harness.runtime.agent_harness      Prompt / 轮次 / 降级策略
   - app.services.rag.message_utils 消息格式化辅助
 """
 
@@ -17,30 +17,29 @@ from typing import Any, AsyncIterator
 from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
 
-from app.runtime.stream_sink import set_sink
+from app.harness.runtime.stream_sink import set_sink
 from app.config import settings
-from app.core.web_search import get_provider as get_web_search_provider
-from app.core.llm import get_chat_llm
-from app.runtime.agent_harness import HarnessUsageStats, get_agent_harness
-from app.runtime.tool_runner import run_parallel_agent
+from app.web_search import get_provider as get_web_search_provider
+from app.harness.core.llm import get_chat_llm
+from app.harness.runtime.agent_harness import HarnessUsageStats, get_agent_harness
+from app.harness.runtime.tool_runner import run_parallel_agent
 import app.services.chat_memory as chat_memory
 from app.services.rag.memory import compact_if_needed, rewrite_question
-from app.rag.retrieval import build_context
+from app.harness.rag.retrieval import build_context
 from app.services.rag.message_utils import content_to_text, history_to_messages
 from app.services.rag.web_context import build_web_context
-from app.tools.mcp_loader import get_all_tools
-from app.tools.meta import get_meta
-
+from app.harness.tools.loader import get_base_tools
+from app.harness.tools.meta import get_meta
 
 # RAG chat 不应该让 LLM 调诊断专用工具 / 写工具 / 元工具,
 # 只暴露"看一眼系统状态"这种纯只读 + 用户可理解的工具.
 _RAG_TOOL_EXCLUDE = {
     "search_knowledge_base",  # 已经在前置 retrieve 阶段做了, 不让 LLM 重复调
-    "web_search",             # 联网走前端开关, 不让 LLM 自己决定 (避免乱搜)
-    "get_current_time",       # 没必要
-    "mcp_search_tools",       # Lazy MCP 元工具
+    "web_search",  # 联网走前端开关, 不让 LLM 自己决定 (避免乱搜)
+    "get_current_time",  # 没必要
+    "mcp_search_tools",  # Lazy MCP 元工具
     "mcp_execute_tool",
-    "delegate_to_evidence_collector",   # 诊断专用 subagent
+    "delegate_to_evidence_collector",  # 诊断专用 subagent
     "delegate_to_kb_researcher",
     "delegate_to_report_writer",
 }
@@ -49,12 +48,15 @@ _RAG_TOOL_EXCLUDE = {
 def _select_rag_tools() -> list:
     """挑出 RAG chat 可用的只读 MCP 工具."""
     try:
-        all_tools = get_all_tools()
+        all_tools = get_base_tools()
     except Exception as exc:
-        logger.warning(f"[rag] get_all_tools 失败, 退化为无工具模式: {type(exc).__name__}: {exc}")
+        logger.warning(
+            f"[rag] get_base_tools 失败, 退化为无工具模式: {type(exc).__name__}: {exc}"
+        )
         return []
     selected = [
-        t for t in all_tools
+        t
+        for t in all_tools
         if get_meta(t.name).read_only and t.name not in _RAG_TOOL_EXCLUDE
     ]
     return selected
@@ -62,7 +64,9 @@ def _select_rag_tools() -> list:
 
 def _supports_thinking(model_name: str) -> bool:
     name = (model_name or "").lower()
-    return any(tag in name for tag in ("qwen3", "qwen-plus", "qwen-max-latest", "qwq", "qvq"))
+    return any(
+        tag in name for tag in ("qwen3", "qwen-plus", "qwen-max-latest", "qwq", "qvq")
+    )
 
 
 async def stream_chat(
@@ -74,10 +78,10 @@ async def stream_chat(
     mcp_tools: bool = True,
 ) -> AsyncIterator[dict]:
     """流式 RAG 聊天, yield 一系列事件:
-      - progress : 阶段提示 (改写 / 检索 / 联网 / LLM 启动 / 统计)
-      - thinking : 推理链 token (qwen3 等支持思考的模型)
-      - token    : LLM 输出 token
-      - error    : 异常
+    - progress : 阶段提示 (改写 / 检索 / 联网 / LLM 启动 / 统计)
+    - thinking : 推理链 token (qwen3 等支持思考的模型)
+    - token    : LLM 输出 token
+    - error    : 异常
     """
     effective_top_k = max(1, int(top_k or settings.rag_top_k))
     retrieval_data = {
@@ -127,7 +131,9 @@ async def stream_chat(
         and (recent_messages or (session.get("summary") or ""))
     )
     if need_rewrite:
-        yield progress("rewrite", "正在改写查询", "融合历史上下文与指代补全", mark_start=True)
+        yield progress(
+            "rewrite", "正在改写查询", "融合历史上下文与指代补全", mark_start=True
+        )
     rewritten_question = await rewrite_question(
         question,
         summary=session.get("summary") or "",
@@ -137,13 +143,19 @@ async def stream_chat(
         rewrite_data = {"original": question, "rewritten": rewritten_question}
         if rewritten_question != question:
             yield progress(
-                "rewrite_done", "查询已改写", rewritten_question[:80],
-                mark_start=True, data=rewrite_data,
+                "rewrite_done",
+                "查询已改写",
+                rewritten_question[:80],
+                mark_start=True,
+                data=rewrite_data,
             )
         else:
             yield progress(
-                "rewrite_done", "查询无需改写", "",
-                mark_start=True, data=rewrite_data,
+                "rewrite_done",
+                "查询无需改写",
+                "",
+                mark_start=True,
+                data=rewrite_data,
             )
 
     # ---------- Stage 2: retrieve + web_search 并行 ----------
@@ -151,13 +163,16 @@ async def stream_chat(
     if settings.rag_rerank_enabled:
         pipeline_text += " -> Rerank"
     yield progress(
-        "retrieve", "正在检索知识库",
+        "retrieve",
+        "正在检索知识库",
         f"top_k={effective_top_k} · candidate_k={settings.rag_retrieve_k} · {pipeline_text}",
         mark_start=True,
         data=retrieval_data | {"pipeline": pipeline_text},
     )
     if web_search:
-        yield progress("web", "正在联网补充资料", "", data={"provider": get_web_search_provider()})
+        yield progress(
+            "web", "正在联网补充资料", "", data={"provider": get_web_search_provider()}
+        )
 
     retrieve_task = asyncio.create_task(
         build_context(rewritten_question, top_k=effective_top_k)
@@ -180,19 +195,26 @@ async def stream_chat(
         sources = fallback["sources"]
         hits_meta = fallback["hits_meta"]
         yield progress(
-            "retrieve_degraded", "知识库检索降级", fallback["event_data"]["error_type"],
-            mark_start=True, data=fallback["event_data"],
+            "retrieve_degraded",
+            "知识库检索降级",
+            fallback["event_data"]["error_type"],
+            mark_start=True,
+            data=fallback["event_data"],
         )
     if hits:
         src_preview = ", ".join(dict.fromkeys(sources[:3])) if sources else ""
         yield progress(
-            "retrieve_done", f"检索完成, 命中 {hits} 个片段", src_preview,
+            "retrieve_done",
+            f"检索完成, 命中 {hits} 个片段",
+            src_preview,
             mark_start=True,
             data=retrieval_data | {"hits": hits_meta, "pipeline": pipeline_text},
         )
     else:
         yield progress(
-            "retrieve_done", "知识库未命中相关内容", "",
+            "retrieve_done",
+            "知识库未命中相关内容",
+            "",
             mark_start=True,
             data=retrieval_data | {"hits": [], "pipeline": pipeline_text},
         )
@@ -208,13 +230,17 @@ async def stream_chat(
         web_skip_reason = fallback["skip_reason"]
         if web_search:
             yield progress(
-                "web_degraded", "联网补充降级", fallback["event_data"]["error_type"],
-                mark_start=True, data=fallback["event_data"],
+                "web_degraded",
+                "联网补充降级",
+                fallback["event_data"]["error_type"],
+                mark_start=True,
+                data=fallback["event_data"],
             )
     if web_search:
         if web_hits:
             yield progress(
-                "web_done", f"联网补充完成 ({len(web_hits)} 条)",
+                "web_done",
+                f"联网补充完成 ({len(web_hits)} 条)",
                 ", ".join(h.get("title", "")[:30] for h in web_hits[:2]),
                 mark_start=True,
                 data={
@@ -225,7 +251,9 @@ async def stream_chat(
             )
         else:
             yield progress(
-                "web_done", "联网搜索已跳过", web_skip_reason or "未触发联网",
+                "web_done",
+                "联网搜索已跳过",
+                web_skip_reason or "未触发联网",
                 mark_start=True,
                 data={"results": [], "skip_reason": web_skip_reason},
             )
@@ -265,7 +293,8 @@ async def stream_chat(
     tools_enabled = bool(rag_tools)
     yield progress(
         "llm_start",
-        "模型正在生成回答" + (f" · 启用 {len(rag_tools)} 个只读工具" if tools_enabled else ""),
+        "模型正在生成回答"
+        + (f" · 启用 {len(rag_tools)} 个只读工具" if tools_enabled else ""),
         "",
         mark_start=True,
         data={
@@ -351,9 +380,9 @@ async def stream_chat(
                         },
                     }
                 elif etype == "usage":
-                    input_tokens  += int(ev.get("input_tokens")  or 0)
+                    input_tokens += int(ev.get("input_tokens") or 0)
                     output_tokens += int(ev.get("output_tokens") or 0)
-                    total_tokens  += int(ev.get("total_tokens")  or 0)
+                    total_tokens += int(ev.get("total_tokens") or 0)
                 # 其他事件 (step_start 等) 直接忽略, 不让 RAG chat 看到诊断专用字段
 
             # runner 完成, 拿 result 做兜底
@@ -361,7 +390,10 @@ async def stream_chat(
                 result = await runner_task
             except Exception as exc:
                 logger.exception(f"[rag] tool runner 异常: {exc}")
-                yield {"type": "error", "message": f"工具回合失败: {type(exc).__name__}: {exc}"}
+                yield {
+                    "type": "error",
+                    "message": f"工具回合失败: {type(exc).__name__}: {exc}",
+                }
                 return
 
             # 流式 fallback (run_parallel_agent 内部 astream 抛错回退到 ainvoke) 时,
@@ -383,7 +415,10 @@ async def stream_chat(
             logger.exception(f"[rag] 工具回合主循环异常: {exc}")
             if not runner_task.done():
                 runner_task.cancel()
-            yield {"type": "error", "message": f"工具回合失败: {type(exc).__name__}: {exc}"}
+            yield {
+                "type": "error",
+                "message": f"工具回合失败: {type(exc).__name__}: {exc}",
+            }
             return
 
         if total_tokens == 0:
@@ -398,7 +433,9 @@ async def stream_chat(
         try:
             async for chunk in llm.astream(messages):
                 ak = getattr(chunk, "additional_kwargs", None)
-                reasoning = ak.get("reasoning_content") if isinstance(ak, dict) else None
+                reasoning = (
+                    ak.get("reasoning_content") if isinstance(ak, dict) else None
+                )
                 if reasoning:
                     yield {"type": "thinking", "content": reasoning}
                 content = content_to_text(chunk.content)
@@ -407,9 +444,11 @@ async def stream_chat(
                     yield {"type": "token", "content": content}
                 um = getattr(chunk, "usage_metadata", None)
                 if um:
-                    input_tokens  = max(input_tokens,  int(um.get("input_tokens")  or 0))
-                    output_tokens = max(output_tokens, int(um.get("output_tokens") or 0))
-                    total_tokens  = max(total_tokens,  int(um.get("total_tokens")  or 0))
+                    input_tokens = max(input_tokens, int(um.get("input_tokens") or 0))
+                    output_tokens = max(
+                        output_tokens, int(um.get("output_tokens") or 0)
+                    )
+                    total_tokens = max(total_tokens, int(um.get("total_tokens") or 0))
             if total_tokens == 0:
                 total_tokens = input_tokens + output_tokens
         except Exception as e:
@@ -420,10 +459,15 @@ async def stream_chat(
     # ---------- 收尾: 写 memory + 输出 stats ----------
     try:
         await chat_memory.append_message(
-            session_id, role="user", content=question, rewritten_query=rewritten_question,
+            session_id,
+            role="user",
+            content=question,
+            rewritten_query=rewritten_question,
         )
         await chat_memory.append_message(
-            session_id, role="assistant", content=full_answer,
+            session_id,
+            role="assistant",
+            content=full_answer,
             sources=sources + web_sources,
         )
         await compact_if_needed(session_id)

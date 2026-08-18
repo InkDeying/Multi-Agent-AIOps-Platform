@@ -19,8 +19,8 @@ from loguru import logger
 
 from app.orchestration.audit import run_legacy_langgraph_with_audit
 from app.config import settings
-from app.core.distributed_limiter import distributed_slot
-from app.core.mcp_client import mcp_client_manager
+from app.queue.distributed_limiter import distributed_slot
+from app.harness.mcp.client import mcp_client_manager
 from app.db.postgres import close_postgres, connect_postgres, init_incident_schema
 from app.incidents.repository import incident_repository
 from app.queue.redis_streams import incident_queue

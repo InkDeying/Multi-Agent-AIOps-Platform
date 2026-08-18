@@ -15,7 +15,7 @@ from typing import Any
 from loguru import logger
 
 from app.config import settings
-from app.core.distributed_limiter import DistributedLimitBusy, distributed_slot
+from app.queue.distributed_limiter import DistributedLimitBusy, distributed_slot
 from app.orchestration.diagnosis_runner import make_event, run_diagnosis_graph
 from app.incidents.models import DiagnosisMode
 

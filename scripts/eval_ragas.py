@@ -2,8 +2,8 @@
 
 跑什么:
   对 data/eval/qa.jsonl 里每条 {question, ground_truth},
-  ① 走项目真实的 RAG 检索 (app.rag.retrieval.build_context, 走 Milvus 混合检索 + rerank);
-  ② 用项目真实的 LLM (app.core.llm.get_chat_llm) 基于检索上下文生成回答;
+  ① 走项目真实的 RAG 检索 (app.harness.rag.retrieval.build_context, 走 Milvus 混合检索 + rerank);
+  ② 用项目真实的 LLM (app.harness.core.llm.get_chat_llm) 基于检索上下文生成回答;
   ③ 把 (question, retrieved_contexts, answer, ground_truth) 喂给 Ragas 4 个指标:
        Faithfulness        答案是否忠于检索到的上下文 (有没有编)
        AnswerRelevancy     答案是否切题
@@ -56,7 +56,7 @@ def read_qa(path: Path, limit: int | None = None) -> list[dict[str, str]]:
 
 async def retrieve(question: str) -> tuple[str, list[str]]:
     """走项目真实的 RAG: 混合检索 + rerank, 返回 (context_text, chunks_list)。"""
-    from app.rag.retrieval import build_context
+    from app.harness.rag.retrieval import build_context
 
     context_text, hits, _sources, hits_meta = await build_context(question)
     if hits == 0:
@@ -78,7 +78,7 @@ _ANSWER_SYS = (
 
 async def generate_answer(question: str, context_text: str) -> str:
     """用项目自己的 LLM 工厂生成回答 (按 .env 中的 model 配置: DashScope/DeepSeek/Ollama)。"""
-    from app.core.llm import get_chat_llm
+    from app.harness.core.llm import get_chat_llm
 
     llm = get_chat_llm(temperature=0.0, timeout=60.0)
     prompt = f"[上下文]\n{context_text}\n\n[问题] {question}\n\n[回答]"
@@ -132,7 +132,7 @@ def run_ragas(samples: list[dict[str, Any]]):
     from ragas.llms import llm_factory
 
     from app.config import settings
-    from app.core.embedding import get_embeddings
+    from app.harness.rag.embedding import get_embeddings
 
     judge_model = settings.dashscope_chat_model
     if judge_model.lower().startswith("deepseek"):

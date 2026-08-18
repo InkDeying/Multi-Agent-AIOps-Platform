@@ -14,10 +14,10 @@ from typing import Any
 
 from loguru import logger
 
-from app.runtime.stream_sink import set_sink
+from app.harness.runtime.stream_sink import set_sink
 from app.incidents.models import DiagnosisMode
-from app.wiki.store import ingest_diagnosis
-from app.runtime.agent_harness import HarnessUsageStats, get_agent_harness
+from app.harness.wiki.store import ingest_diagnosis
+from app.harness.runtime.agent_harness import HarnessUsageStats, get_agent_harness
 # chat_memory 在 _cache_report 内 lazy import,避免 services -> orchestration -> services 循环。
 
 RuntimeEvent = dict[str, Any]
@@ -30,7 +30,7 @@ async def get_diagnosis_graph():
     """返回进程级缓存的 fast 诊断图 (懒构建)。"""
     global _graph_plain
     if _graph_plain is None:
-        from app.agents import build_aiops_graph
+        from app.agents.fast import build_aiops_graph
 
         _graph_plain = build_aiops_graph()
     return _graph_plain
@@ -44,7 +44,7 @@ async def get_deep_diagnosis_graph():
     """
     global _deep_graph_plain
     if _deep_graph_plain is None:
-        from app.diagnosis_graphs import build_deep_graph
+        from app.agents.deep import build_deep_graph
 
         _deep_graph_plain = build_deep_graph()
     return _deep_graph_plain

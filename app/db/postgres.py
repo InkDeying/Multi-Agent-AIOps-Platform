@@ -266,5 +266,5 @@ CREATE INDEX IF NOT EXISTS idx_approval_requests_status_created
 CREATE INDEX IF NOT EXISTS idx_approval_requests_task
     ON approval_requests(task_id, created_at DESC);
 
--- 注: 经验沉淀已改为文件系统 LLM Wiki (data/wiki/, 见 app/wiki/), 不再用 Postgres 表。
+-- 注: 经验沉淀已改为文件系统 LLM Wiki (data/wiki/, 见 app/harness/wiki/), 不再用 Postgres 表。
 """

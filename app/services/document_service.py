@@ -12,9 +12,9 @@ from fastapi import UploadFile
 from loguru import logger
 
 from app.config import settings
-from app.core.milvus import milvus_manager
-from app.core.splitter import split_markdown
-from app.core.vector_store import get_vector_store
+from app.harness.rag.milvus import milvus_manager
+from app.harness.rag.splitter import split_markdown
+from app.harness.rag.vector_store import get_vector_store
 from app.exceptions import (
     UnsupportedFileTypeError,
     VectorStoreError,
@@ -68,7 +68,7 @@ async def upload_document(file: UploadFile) -> UploadResponse:
     # 为什么放在这里: 保证下一次 RAG 查询就能用新文档; 失败不阻断上传
     if settings.rag_hybrid_enabled and settings.rag_bm25_refresh_on_upload:
         try:
-            from app.core.hybrid_retriever import refresh_bm25_index
+            from app.harness.rag.hybrid_retriever import refresh_bm25_index
 
             refresh_bm25_index()
         except Exception as e:
@@ -155,7 +155,7 @@ def delete_document(source: str) -> int:
         # 同步刷新 BM25 索引 (避免删除后 BM25 仍能命中已删文档)
         if settings.rag_hybrid_enabled and settings.rag_bm25_refresh_on_upload:
             try:
-                from app.core.hybrid_retriever import refresh_bm25_index
+                from app.harness.rag.hybrid_retriever import refresh_bm25_index
 
                 refresh_bm25_index()
             except Exception as e:

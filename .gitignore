@@ -58,3 +58,6 @@ coverage/
 *.sqlite3
 *.db
 .run
+findings.md
+progress.md
+task_plan.md

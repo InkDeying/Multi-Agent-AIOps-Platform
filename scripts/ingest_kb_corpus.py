@@ -63,7 +63,7 @@ def collect_files(limit: int = 0) -> List[Tuple[Path, str]]:
 
 def split_all(files: List[Tuple[Path, str]]) -> List[Document]:
     """把所有文件切成 Document chunks."""
-    from app.core.splitter import split_markdown
+    from app.harness.rag.splitter import split_markdown
 
     all_chunks: List[Document] = []
     failed = 0
@@ -136,7 +136,7 @@ def _clear_checkpoint() -> None:
 
 def ingest_to_milvus(chunks: List[Document], batch_size: int = 100, resume: bool = False) -> None:
     """分批写入 Milvus."""
-    from app.core.vector_store import get_vector_store
+    from app.harness.rag.vector_store import get_vector_store
 
     vs = get_vector_store()
     total = len(chunks)
@@ -212,7 +212,7 @@ def reset_collection() -> None:
     else:
         logger.info(f"collection 不存在, 跳过 drop: {settings.milvus_collection}")
     # 清掉单例缓存, 让下次 get_vector_store 重建
-    from app.core.vector_store import get_vector_store
+    from app.harness.rag.vector_store import get_vector_store
 
     get_vector_store.cache_clear()
 

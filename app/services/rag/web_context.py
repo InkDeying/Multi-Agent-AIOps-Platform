@@ -3,7 +3,7 @@
 策略:
   - 联网仅允许搜索 "前面诊断报告里出现过的实体/术语" (white-list by reference)
   - 命中黑名单 / 敏感词直接拒
-  - 真正的 provider 调度走 app.core.web_search
+  - 真正的 provider 调度走 app.web_search
 """
 
 from __future__ import annotations
@@ -15,9 +15,8 @@ from typing import Any
 from loguru import logger
 
 from app.config import settings
-from app.core.web_search import format_results, get_provider, search
+from app.web_search import format_results, get_provider, search
 import app.services.chat_memory as chat_memory
-
 
 _SENSITIVE_WEB_PATTERNS = (
     re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
@@ -28,7 +27,13 @@ _SENSITIVE_WEB_PATTERNS = (
 )
 
 _BLOCKED_WEB_KEYWORDS = (
-    "password", "passwd", "api_key", "api-key", "token", "secret", "私钥",
+    "password",
+    "passwd",
+    "api_key",
+    "api-key",
+    "token",
+    "secret",
+    "私钥",
 )
 
 
@@ -44,16 +49,50 @@ _REPORT_TERM_RE = re.compile(
 )
 
 _REPORT_TERM_STOPWORDS = {
-    "什么", "怎么", "为什么", "刚刚", "刚才", "之前", "前面", "说的", "这个", "那个",
-    "帮我", "一下", "可以", "联网", "搜索", "查询", "诊断", "报告", "问题", "原因",
-    "cpu", "gpu", "ram", "mb", "gb", "kb", "ms", "pid",
-    "what", "why", "how", "the", "and", "for", "with", "this", "that",
+    "什么",
+    "怎么",
+    "为什么",
+    "刚刚",
+    "刚才",
+    "之前",
+    "前面",
+    "说的",
+    "这个",
+    "那个",
+    "帮我",
+    "一下",
+    "可以",
+    "联网",
+    "搜索",
+    "查询",
+    "诊断",
+    "报告",
+    "问题",
+    "原因",
+    "cpu",
+    "gpu",
+    "ram",
+    "mb",
+    "gb",
+    "kb",
+    "ms",
+    "pid",
+    "what",
+    "why",
+    "how",
+    "the",
+    "and",
+    "for",
+    "with",
+    "this",
+    "that",
 }
 
 _WEB_QUERY_PREFIX_RE = re.compile(
     r"^\s*(?:请)?(?:帮我)?(?:联网(?:搜索|查询|查找|看看|看一下|查一下)?|搜索|查询|查找|查一下|看一下)[：:\s，,、-]*",
     re.IGNORECASE,
 )
+
 
 def _normalize_web_query(query: str) -> str:
     normalized = re.sub(r"\s+", " ", query.strip())

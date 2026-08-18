@@ -25,14 +25,15 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
-from app.api.middleware import setup_middlewares
-from app.api.v1 import aiops, chat, documents, eval as eval_api, health, incidents, queue, skills, webhook, wiki, approvals
+from app.middleware import setup_middlewares
+from app.api import aiops, approvals, chat, documents, eval as eval_api
+from app.api import health, incidents, queue, skills, webhook, wiki
 from app.config import settings
-from app.core.mcp_client import mcp_client_manager
-from app.core.milvus import milvus_manager
+from app.harness.mcp.client import mcp_client_manager
+from app.harness.rag.milvus import milvus_manager
 from app.db.postgres import close_postgres, connect_postgres, init_incident_schema
 from app.exceptions import AppException
-from app.logging_config import setup_logging
+from app.logging import setup_logging
 from app.queue.redis_streams import incident_queue
 from app.schemas.common import ApiResponse
 
@@ -132,9 +133,7 @@ async def handle_validation_error(
 
 
 @app.exception_handler(Exception)
-async def handle_unexpected_exception(
-    request: Request, exc: Exception
-) -> JSONResponse:
+async def handle_unexpected_exception(request: Request, exc: Exception) -> JSONResponse:
     """兜底: 处理所有未捕获异常."""
     logger.exception(f"未预期的异常: {exc}")
     return JSONResponse(

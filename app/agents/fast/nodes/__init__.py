@@ -1,0 +1,1 @@
+"""Fast diagnosis graph nodes."""

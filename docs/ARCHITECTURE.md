@@ -80,15 +80,19 @@ Skill Router
 
 ### Skill Router
 
-`app/agents/skill_router.py` 把 Skill 的名称、描述和触发词组织成菜单，请 LLM 返回结构化选择。
+`app/agents/fast/nodes/skill_router.py` 把 Skill 的名称、描述和触发词组织成菜单，请 LLM
+返回结构化选择。
 当 LLM 失败时，规则只负责判断输入是否属于 OnCall 范围，再回退到 `generic_oncall` 或直接结束。
 
 ### Planner / Executor / Replanner
 
 - Planner 根据选中的 Playbook 生成诊断步骤。
-- Executor 通过 `app/runtime/tool_filter.py` 和权限决策收窄工具，再执行当前步骤。
+- Executor 通过 `app/harness/runtime/tool_filter.py` 和权限决策收窄工具，再执行当前步骤。
 - Replanner 根据已获得证据继续、调整、切换 Skill 或结束。
 - Harness 统一管理模型档位、预算、Prompt 和运行统计。
+
+fast 图的装配入口为 `app/agents/fast/graph.py`，状态契约位于
+`app/agents/fast/state.py`，节点实现集中在 `app/agents/fast/nodes/`。
 
 ### 工具边界
 
@@ -98,6 +102,9 @@ Skill 的 `allowed_tools` 不是对所有查询工具的绝对白名单：
 - 已在 ToolMeta 中登记为只读的工具，可由运行时策略补充，降低 Skill 漏配导致模型猜测的风险。
 - PermissionMode 与 Guardrail 会继续给候选工具生成 `allow / ask / deny` 决策。
 - 高风险工具默认阻断；`ask_destructive` 模式可以进入人工审批。
+
+`app/harness/tools/loader.py` 只加载本地和 MCP 基础工具；`app/harness/tools/catalog.py` 再合并
+`app/agents/delegates/` 提供的 `delegate_to_*` 工具，避免基础工具加载器反向依赖 Agent。
 
 ## 4. deep 诊断图
 
@@ -130,6 +137,9 @@ IncidentManager
 
 专业 Agent 使用隔离的最小 LLM/工具循环，只把压缩 Evidence 写入共享状态，中间对话不会互相
 传播。单个 Agent 失败时会返回带 `error_type` 的 Evidence，避免整张图因一个数据源失败而中断。
+
+deep 图的装配入口为 `app/agents/deep/graph.py`，共享状态位于
+`app/agents/deep/state.py`，各节点实现集中在 `app/agents/deep/nodes/`。
 
 当前专业 Agent 使用硬编码的只读工具集合，并通过 `decisions=None` 调用并行工具运行器；它们尚未
 复用 fast 链路完整的 PermissionMode 决策。这是已知限制，新增任何写工具前必须先补齐权限集成。
@@ -218,7 +228,8 @@ API 和 Worker 使用同一个 Python 镜像，通过 Compose Command 区分角�
 
 ## 9. 已知工程限制
 
-- 没有已提交的 `tests/`、CI Workflow、`pyproject.toml` 或统一 Formatter 配置。
+- 已有聚焦图拓扑、事件信封和确定性节点行为的 `unittest` 测试，但没有 CI Workflow、
+  `pyproject.toml` 或统一 Formatter 配置，也不覆盖真实 Provider、数据库、MCP 或端到端链路。
 - 多个核心模块仍较大，职责拆分和复杂度治理需要单独重构计划与回归证据。
 - Windows `run.ps1` 不是完整 V3 后台拓扑启动器；完整部署应使用 Compose `app` Profile。
 - deep 专业 Agent 尚未统一接入 fast 的 PermissionMode 决策。

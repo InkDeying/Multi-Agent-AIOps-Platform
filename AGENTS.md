@@ -146,14 +146,19 @@ gate; confirm credentials, cost, data scope, and service readiness first.
 | `app/api/` | HTTP/SSE ingress and request/response contracts |
 | `app/services/` | Use-case services such as diagnosis and RAG chat |
 | `app/orchestration/` | Diagnosis-mode selection, execution, audit, and event conversion |
-| `app/agents/` | Fast graph nodes and deep specialist agents |
-| `app/diagnosis_graphs/` | Deep diagnosis graph assembly and evidence reduction |
-| `app/runtime/` | Agent harness, permissions, approvals, tool orchestration, budgets, and transitions |
-| `app/skills/` | Skill models, loader, registry, playbooks, and Skill documentation |
-| `app/tools/`, `mcp_servers/` | Tool metadata, local tools, and external MCP process boundaries |
+| `app/agents/fast/` | Fast graph, state, and Skill-Plan-Execute-Replan nodes |
+| `app/agents/deep/` | Deep graph, state, specialist nodes, evidence reduction, RCA, and reporting |
+| `app/agents/delegates/` | Reusable `delegate_to_*` agent definitions and tool adapters |
+| `app/harness/core/` | LLM factories, parsing, structured output, provider adapters, and shared Harness utilities |
+| `app/harness/rag/` | Embeddings, document splitting, Milvus, vector/hybrid retrieval, and reranking |
+| `app/harness/mcp/` | MCP client lifecycle and lazy MCP tool exposure |
+| `app/harness/runtime/` | Agent harness, permissions, approvals, tool orchestration, budgets, and transitions |
+| `app/harness/skills/` | Skill models, loader, registry, playbooks, and Skill documentation |
+| `app/harness/tools/` | Tool metadata, local tool definitions, base-tool loading, and tool catalog |
+| `app/harness/wiki/` | Runtime LLM Wiki experience storage and recall |
 | `app/incidents/`, `app/evidence/`, `app/db/` | Incident, evidence, persistence, and schema ownership |
-| `app/queue/` | Redis Streams, worker coordination, and queue observability |
-| `app/core/`, `app/rag/` | Provider clients, embeddings, retrieval, reranking, and shared infrastructure |
+| `app/queue/` | Redis Streams, worker coordination, distributed slots, rate limits, and queue observability |
+| `mcp_servers/` | External MCP process boundaries |
 | `benchmark/` | Retrieval/RAG evaluation datasets, runner, and generated reports |
 | `data/kb_corpus/` | Versioned public RAG corpus; not operational documentation |
 | `data/wiki/` | Runtime-generated experience store; only conventions are versioned |
@@ -197,7 +202,7 @@ Changes in these areas require focused evidence and usually separate approval:
 
 - `.env.example` and `app/config.py`: provider selection, credentials, public
   endpoints, concurrency, and security defaults.
-- `app/runtime/permissions.py`, `tool_filter.py`, `tool_runner.py`, and
+- `app/harness/runtime/permissions.py`, `tool_filter.py`, `tool_runner.py`, and
   `approvals.py`: public safety and side-effect boundaries.
 - `mcp_servers/docker_server.py`: contains a restart operation. Never treat every
   Docker tool as read-only.
@@ -211,13 +216,14 @@ Changes in these areas require focused evidence and usually separate approval:
 
 ## 7. Validation Expectations
 
-The repository currently has no committed `tests/` suite, `pyproject.toml`, or CI
-workflow. Do not claim unit, integration, or end-to-end coverage that does not
-exist.
+The repository has focused `unittest` behavior-contract tests but no
+`pyproject.toml` or CI workflow. Do not describe these tests as provider,
+database, MCP, integration, or end-to-end coverage.
 
 Safe baseline checks:
 
 ```bash
+python -m unittest discover -s tests -v
 ruff check app mcp_servers benchmark scripts
 python -m compileall -q app mcp_servers benchmark scripts
 docker compose config --quiet

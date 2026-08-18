@@ -149,7 +149,7 @@ def score_hits(
 
 async def run_retrieval(args: argparse.Namespace) -> dict[str, Any]:
     from app.config import settings
-    from app.rag.retrieval import build_context
+    from app.harness.rag.retrieval import build_context
 
     preflight_milvus()
     rows = load_jsonl(RETRIEVAL_QA, limit=args.limit, scenario=args.scenario, ids=args.ids)
@@ -263,7 +263,7 @@ async def run_retrieval(args: argparse.Namespace) -> dict[str, Any]:
 
 
 async def retrieve_context(question: str) -> tuple[str, list[str], list[dict[str, Any]]]:
-    from app.rag.retrieval import build_context
+    from app.harness.rag.retrieval import build_context
 
     context_text, hits, _sources, meta = await build_context(question)
     if hits == 0:
@@ -274,7 +274,7 @@ async def retrieve_context(question: str) -> tuple[str, list[str], list[dict[str
 
 
 async def generate_answer(question: str, context_text: str) -> str:
-    from app.core.llm import get_chat_llm
+    from app.harness.core.llm import get_chat_llm
 
     llm = get_chat_llm(temperature=0.0, timeout=60.0, max_tokens=700)
     prompt = f"""[知识库上下文]
@@ -315,7 +315,7 @@ def make_ragas_judge_and_embeddings():
     from ragas.llms import llm_factory
 
     from app.config import settings
-    from app.core.embedding import get_embeddings
+    from app.harness.rag.embedding import get_embeddings
 
     model = settings.dashscope_chat_model
     if model.lower().startswith("deepseek"):
@@ -367,7 +367,7 @@ def make_openevals_evaluators() -> tuple[Any, str, str]:
     """
     from openevals.prompts import RAG_GROUNDEDNESS_PROMPT, RAG_HELPFULNESS_PROMPT
 
-    from app.core.llm import get_chat_llm
+    from app.harness.core.llm import get_chat_llm
 
     judge = get_chat_llm(temperature=0.0, timeout=60.0, max_retries=1)
     return judge, RAG_GROUNDEDNESS_PROMPT, RAG_HELPFULNESS_PROMPT

@@ -1,2 +1,1 @@
-"""Queue adapters for diagnosis tasks."""
-
+"""Redis Streams, distributed diagnosis slots, and API rate limiting."""

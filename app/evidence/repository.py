@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.core.db_utils import json_dump, new_id
+from app.db.utils import json_dump, new_id
 from app.db.postgres import get_pool
 from app.evidence.models import EvidenceCreate
 

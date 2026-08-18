@@ -1,21 +1,23 @@
-"""LangGraph 主图入口。
+"""AIOps Agent 图的兼容入口。
 
-Plan-Execute-Replan 三段式：
-  Planner    -> 把告警拆为多步计划
-  Executor   -> 执行单步, 调工具 (支持只读并行)
-  Replanner  -> 看结果, 决定继续 / 替换计划 / 收尾
-
-详细图结构见 graph.py, 状态见 state.py。
+新代码应显式从 :mod:`app.agents.fast` 或 :mod:`app.agents.deep` 导入。
 """
 
-from app.agents.state import PlanExecuteState
+from app.agents.fast.state import PlanExecuteState
 
 
 def build_aiops_graph():
     """懒加载 + 构建 fast 诊断图 (避免顶层 import 把 langchain 拖到模块加载期)。"""
-    from app.agents.graph import build_aiops_graph as _build_aiops_graph
+    from app.agents.fast import build_aiops_graph as _build_aiops_graph
 
     return _build_aiops_graph()
 
 
-__all__ = ["build_aiops_graph", "PlanExecuteState"]
+def build_deep_graph():
+    """懒加载 + 构建 deep 诊断图。"""
+    from app.agents.deep import build_deep_graph as _build_deep_graph
+
+    return _build_deep_graph()
+
+
+__all__ = ["build_aiops_graph", "build_deep_graph", "PlanExecuteState"]

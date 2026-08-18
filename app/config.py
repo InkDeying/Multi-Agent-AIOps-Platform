@@ -204,8 +204,8 @@ class Settings(BaseSettings):
         default=True,
         description=(
             "deep 模式是否路由到 Deep Diagnosis Graph (多 Agent 深度诊断). "
-            "默认开: 8 节点已全部填实 (Metric/Log/Runbook 隔离 subagent + EvidenceReducer "
-            "+ RCAJudge + Report + EvidencePlan 规则路由 + IncidentMgr/CorrelationContext + Remediation), "
+            "默认开: 包含 Metric/Log/Infra/Runbook 隔离专业 Agent、EvidenceReducer、"
+            "RCAJudge、Report、EvidencePlan、IncidentManager、CorrelationContext 和 Remediation, "
             "deep 请求会真走深度图并产出含证据链/候选/处置的 Markdown 报告 (需 langgraph 栈). "
             "置 False 则回落到 fast plan-execute-replan (无 langgraph 栈或想退回单链路时用)."
         ),

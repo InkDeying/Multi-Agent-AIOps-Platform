@@ -1,4 +1,4 @@
-# Multi-Agent AIOps Platform V3
+# Multi-Agent AIOps Platform
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-green)
@@ -6,12 +6,6 @@
 ![Milvus](https://img.shields.io/badge/Milvus-2.4-purple)
 ![MCP](https://img.shields.io/badge/MCP-Tools-black)
 
-> [!IMPORTANT]
-> ### 学习内容与项目状态
->
-> 这是我在学习 Agent 开发过程中整理的入门项目，主要用于个人学习、实践和记录。通过本项目，
-> 你可以了解以下基础内容：
->
 > - 基础的 **Agent Workflow**：理解任务如何规划、执行、重新规划并生成结果。
 > - 基础的 **RAG**：理解知识如何导入、检索、融合并作为上下文提供给模型。
 > - 简单的 **Skills 用法与路由选择**：根据任务选择合适的 Skill，并使用对应的 Playbook 和工具。
@@ -248,15 +242,27 @@ X-KB-Admin-Token: your-admin-token
 ```text
 .
 ├── app/
-│   ├── agents/              # fast 节点和 deep 专业 Agent
+│   ├── agents/              # 诊断 Agent 主域
+│   │   ├── fast/            # fast graph、state 和节点
+│   │   ├── deep/            # deep graph、state 和专业节点
+│   │   └── delegates/       # delegate_to_* 通用委托 Agent
 │   ├── api/                 # FastAPI 路由
-│   ├── diagnosis_graphs/    # deep graph
+│   ├── middleware.py        # HTTP 中间件
+│   ├── harness/             # AI/AIOps Harness 工程
+│   │   ├── core/            # LLM、Provider 和通用基础能力
+│   │   ├── rag/             # Embedding、Milvus、检索和 Rerank
+│   │   ├── mcp/             # MCP 客户端和动态工具
+│   │   ├── skills/          # Skill 注册表与 Playbook
+│   │   ├── tools/           # 工具定义、装配与元数据
+│   │   ├── wiki/            # LLM Wiki 经验库
+│   │   └── runtime/         # Harness、权限、审批和工具编排
 │   ├── orchestration/       # 诊断执行与审计
-│   ├── runtime/             # Harness、权限、审批和工具编排
-│   ├── skills/              # Skill 注册表与 Playbook
+│   ├── services/            # API 面向的业务用例
 │   ├── incidents/           # 事件与任务事实
-│   ├── queue/               # Redis Streams
-│   └── core/                # LLM、Milvus、Embedding、Rerank 等基础能力
+│   ├── evidence/            # 诊断证据
+│   ├── db/                  # Postgres 持久化
+│   ├── queue/               # Redis Streams、并发槽和限流
+│   └── schemas/             # 请求/响应与领域契约
 ├── benchmark/               # 检索与 RAG 评测
 ├── data/kb_corpus/          # 公开 RAG 语料
 ├── docs/                    # 架构、并发验证、压测和 SOP
@@ -269,7 +275,7 @@ X-KB-Admin-Token: your-admin-token
 ## 文档导航
 
 - [系统架构与已知限制](docs/ARCHITECTURE.md)
-- [Skill 层与扩展方式](app/skills/README.md)
+- [Skill 层与扩展方式](app/harness/skills/README.md)
 - [Benchmark 使用说明](benchmark/README.md)
 - [并发与队列测试指南](docs/CONCURRENCY_TEST_GUIDE.md)
 - [历史压测报告](docs/PRESSURE_TEST_REPORT.md)
