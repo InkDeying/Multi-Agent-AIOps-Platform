@@ -61,3 +61,4 @@ coverage/
 findings.md
 progress.md
 task_plan.md
+/tests/
