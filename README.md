@@ -19,12 +19,9 @@
 面向 OnCall / SRE 场景的多智能体诊断工作台。系统把用户故障描述或 Alertmanager 告警转换为
 结构化任务，选择对应 Skill，通过 RAG 与 MCP 工具收集证据，并输出可追溯的 Markdown 报告。
 
-V3 在原有单次诊断链路上增加了 `fast / deep` 双模式、Redis Streams 队列、后台 Worker、
+在原有单次诊断链路上增加了 `fast / deep` 双模式、Redis Streams 队列、后台 Worker、
 Postgres 事实库、事件中心、权限与审批结构、LLM Wiki、RAG 评测和并发压测。
 
-[项目视频](https://www.bilibili.com/video/BV182RCBGEod/)
-
-![Product Preview](intro.png)
 
 ## 核心能力
 
@@ -79,7 +76,7 @@ deep 当前包含 MetricAgent、LogAgent、InfraAgent 和 RunbookAgent。Agent �
 ### 2. 获取代码与安装依赖
 
 ```bash
-git clone https://github.com/Kkkirito-123/mutil-rag-agent.git
+git clone https://github.com/InkDeying/Multi-Agent-AIOps-Platform.git
 cd mutil-rag-agent
 
 python3.12 -m venv .venv
@@ -297,7 +294,7 @@ X-KB-Admin-Token: your-admin-token
 
 ## 版本说明
 
-“V3”表示项目架构的第三代演进：从同步演示链路升级为带后台队列、事实审计和双诊断图的工作台。
+项目架构的第三代演进：从同步演示链路升级为带后台队列、事实审计和双诊断图的工作台。
 运行时 API 版本仍由 `.env` 中的 `APP_VERSION` 独立配置。
 
 ## License 与来源
