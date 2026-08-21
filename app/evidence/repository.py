@@ -2,39 +2,20 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from app.db.utils import json_dump, new_id
-from app.db.postgres import get_pool
+from app.db.base import acquire, rows_to_dicts
+from app.db.base import json_dump, new_id
 from app.evidence.models import EvidenceCreate
 
-
-def _loads(value: Any) -> Any:
-    if not isinstance(value, str):
-        return value
-    try:
-        return json.loads(value)
-    except Exception:
-        return value
-
-
-def _row_to_dict(row: Any | None) -> dict[str, Any] | None:
-    if row is None:
-        return None
-    item = dict(row)
-    for key in ("content", "metadata"):
-        if key in item:
-            item[key] = _loads(item[key])
-    return item
+_JSON_KEYS = ("content", "metadata")
 
 
 class EvidenceRepository:
     async def create(self, evidence: EvidenceCreate) -> str:
         evidence_id = new_id("ev")
         source = getattr(evidence.source, "value", evidence.source)
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+        async with acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO evidence (
@@ -63,8 +44,7 @@ class EvidenceRepository:
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         limit = max(1, min(limit, 500))
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+        async with acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT * FROM evidence
@@ -75,12 +55,11 @@ class EvidenceRepository:
                 incident_group_id,
                 limit,
             )
-        return [_row_to_dict(row) or {} for row in rows]
+        return rows_to_dicts(rows, _JSON_KEYS)
 
     async def list_for_task(self, task_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
         limit = max(1, min(limit, 500))
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+        async with acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT ev.*
@@ -93,7 +72,7 @@ class EvidenceRepository:
                 task_id,
                 limit,
             )
-        return [_row_to_dict(row) or {} for row in rows]
+        return rows_to_dicts(rows, _JSON_KEYS)
 
 
 evidence_repository = EvidenceRepository()

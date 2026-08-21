@@ -1,7 +1,7 @@
 """LLM 输出解析的小工具.
 
 聚合点: 此前 ``_extract_json`` 散落多处各写一份, 容差细节不一致 (正则 ``\\{.*\\}`` vs
-``find/rfind`` 切片), 抽到此处统一.
+``find/rfind`` 切片), 抽到此处统一; ``content_to_text`` 同理。
 
 设计选择: 用 ``find('{') + rfind('}')`` 切片版 (reflector / drafter 风格) 而非
 原 ``structured`` 的正则版 ——
@@ -43,3 +43,22 @@ def extract_json(text: str, *, source: str = "llm output") -> dict[str, Any]:
     if not isinstance(obj, dict):
         raise ValueError(f"{source} is not a json object")
     return obj
+
+
+def content_to_text(content: Any) -> str:
+    """LangChain 消息 content 可能是 str 或 list[dict|str], 统一抽成纯文本.
+
+    聚合点: 此前 ``structured`` / ``tool_runner`` / ``replanner`` / RAG 服务各写了
+    一遍同样的 ``"".join(...)``。这里是唯一实现, 其余位置只调用。
+
+    注意: ``harness/wiki/text_utils.py:coerce_text`` 和 ``rca_judge`` 里的转换看着像,
+    但语义不同 (前者还认 ``content`` 键, 后者对 list 取 repr), 故意没有合并进来。
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            item.get("text", "") if isinstance(item, dict) else str(item)
+            for item in content
+        )
+    return str(content)

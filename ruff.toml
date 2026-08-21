@@ -1,0 +1,13 @@
+# 固定为本仓库原本就通过的规则集 (ruff 0.6.9 默认值),
+# 避免以后升级 ruff 时 `ruff check` 结果漂移。
+line-length = 88
+target-version = "py312"
+
+exclude = [
+    ".venv",
+    "open-webSearch-main",
+    "__pycache__",
+]
+
+[lint]
+select = ["E4", "E7", "E9", "F"]

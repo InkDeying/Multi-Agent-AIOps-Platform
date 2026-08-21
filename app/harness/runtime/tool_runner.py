@@ -28,6 +28,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_core.tools import BaseTool
 from loguru import logger
 
+from app.harness.core.llm_parse import content_to_text
 from app.harness.runtime.stream_sink import emit as emit_stream
 from app.harness.tools.meta import get_meta
 
@@ -277,10 +278,7 @@ async def run_parallel_agent(
                 acc = chunk if acc is None else (acc + chunk)  # type: ignore[operator]
                 text = getattr(chunk, "content", "")
                 if isinstance(text, list):
-                    text = "".join(
-                        c.get("text", "") if isinstance(c, dict) else str(c)
-                        for c in text
-                    )
+                    text = content_to_text(text)
                 if text:
                     await emit_stream({"type": "step_token", "content": text})
         except Exception:

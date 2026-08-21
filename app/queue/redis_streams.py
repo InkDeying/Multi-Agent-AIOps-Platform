@@ -57,20 +57,19 @@ class RedisIncidentQueue:
     async def connect(self) -> None:
         if self._client is not None:
             return
-        try:
-            from redis.asyncio import Redis
-        except Exception as exc:  # pragma: no cover - dependency/runtime guard
-            raise RuntimeError("redis 包不可用, 无法启用 Incident Queue") from exc
-
         block_timeout_sec = max(1.0, settings.diagnosis_worker_block_ms / 1000.0)
-        self._client = Redis.from_url(
-            settings.redis_url,
-            decode_responses=True,
-            socket_connect_timeout=5,
-            socket_timeout=max(30.0, block_timeout_sec + 5.0),
-            health_check_interval=30,
-        )
-        await self._client.ping()
+        try:
+            from app.db.redis import open_client
+
+            self._client = await open_client(
+                settings.redis_url,
+                decode_responses=True,
+                socket_connect_timeout=5,
+                socket_timeout=max(30.0, block_timeout_sec + 5.0),
+                health_check_interval=30,
+            )
+        except ImportError as exc:  # pragma: no cover - 依赖缺失守卫
+            raise RuntimeError("redis 包不可用, 无法启用 Incident Queue") from exc
         await self.ensure_group()
         logger.info(f"[incident-queue] connected stream={settings.incident_queue_stream}")
 

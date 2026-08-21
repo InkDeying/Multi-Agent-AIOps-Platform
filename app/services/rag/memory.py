@@ -11,7 +11,8 @@ from app.config import settings
 from app.harness.core.llm import get_chat_llm
 from app.harness.runtime.agent_harness import get_agent_harness
 import app.services.chat_memory as chat_memory
-from app.services.rag.message_utils import content_to_text, format_history
+from app.harness.core.llm_parse import content_to_text
+from app.services.rag.message_utils import format_history
 
 
 async def rewrite_question(

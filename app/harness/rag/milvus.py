@@ -1,21 +1,48 @@
 """Milvus 客户端管理.
 
 职责划分:
-  - 本模块: 底层连接管理 + 健康检查 + Collection 元数据管理
-  - services/vector_store.py (后续阶段): 高层向量操作 (用 langchain_milvus.Milvus 包装)
+  - 本模块: 底层连接管理 + 健康检查 + Collection 元数据管理, 以及唯一的
+    "MilvusClient 内部 alias 注册进 ORM 连接表" 入口 (``connect_orm_alias``);
+  - harness/rag/vector_store.py: 高层向量操作 (用 langchain_milvus.Milvus 包装).
 
 为什么分两层?
   - 底层用 pymilvus, 提供精细控制 (健康检查、维度校验、强制重建)
   - 高层用 langchain_milvus, 与 LangChain 生态无缝衔接 (RAG / Retriever)
 """
 
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple
 
 from loguru import logger
-from pymilvus import MilvusException, connections, utility
+from pymilvus import MilvusClient, MilvusException, connections, utility
 
 from app.config import settings
 from app.exceptions import VectorStoreError
+
+
+def milvus_uri() -> str:
+    """MilvusClient 只接受 uri, 这里是唯一的拼接点."""
+    return f"http://{settings.milvus_host}:{settings.milvus_port}"
+
+
+def connect_orm_alias() -> Tuple[Any, str]:
+    """新建 MilvusClient, 并把它内部的 alias 注册进 pymilvus ORM 连接表.
+
+    背景: langchain_milvus 0.3+ 走 MilvusClient (新 API), 但它的
+    ``_extract_fields()`` 内部又用 ``pymilvus.orm.Collection`` (旧 API)。
+    两套 API 各有一份连接注册表, 不打通就会抛 ConnectionNotExistException。
+
+    这段桥接原先在 ``vector_store.get_vector_store`` 和
+    ``hybrid_retriever._load_all_chunks_from_milvus`` 各写了一遍, 现在只此一处。
+
+    Returns:
+        (client, alias): client 可直接用于新 API 调用, alias 用于 ORM Collection。
+    """
+    uri = milvus_uri()
+    client = MilvusClient(uri=uri)
+    alias = client._using
+    if alias not in [c[0] for c in connections.list_connections()]:
+        connections.connect(alias=alias, uri=uri)
+    return client, alias
 
 
 class MilvusManager:

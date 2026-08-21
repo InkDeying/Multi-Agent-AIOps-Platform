@@ -12,7 +12,7 @@ from langchain_core.language_models import BaseChatModel
 from loguru import logger
 from pydantic import BaseModel
 
-from app.harness.core.llm_parse import extract_json
+from app.harness.core.llm_parse import content_to_text, extract_json
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -61,14 +61,7 @@ async def ainvoke_structured(
 
     json_llm = llm.bind(response_format={"type": "json_object"})
     resp = await json_llm.ainvoke([json_instruction, *messages])
-    content = getattr(resp, "content", resp)
-    if isinstance(content, list):
-        text = "".join(
-            item.get("text", "") if isinstance(item, dict) else str(item)
-            for item in content
-        )
-    else:
-        text = str(content)
+    text = content_to_text(getattr(resp, "content", resp))
     data = extract_json(text, source="structured output")
     obj = schema_cls.model_validate(data)
     logger.debug(f"[structured] JSON parsed as {schema_cls.__name__}: {obj}")

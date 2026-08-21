@@ -21,10 +21,10 @@ from typing import Any, List, Optional
 from langchain_core.documents import Document
 from langchain_milvus import Milvus
 from loguru import logger
-from pymilvus import MilvusClient, connections
 
 from app.config import settings
 from app.harness.rag.embedding import get_embeddings
+from app.harness.rag.milvus import connect_orm_alias, milvus_uri
 
 
 @lru_cache(maxsize=1)
@@ -35,23 +35,13 @@ def get_vector_store() -> Milvus:
         Milvus: 实现了 VectorStore 接口的实例
 
     Notes:
-        - langchain_milvus 0.3+ 用 MilvusClient (新 API),
-          但底层 _extract_fields() 又用了 pymilvus.orm.Collection (旧 API).
-          这两个 API 用不同的连接注册表, 导致 ConnectionNotExistException.
-        - 修复: 先用 MilvusClient 拿到自动生成的 alias, 再用 connections.connect()
-          把同一个 alias 注册到 ORM registry, 让两套 API 共享连接.
+        - langchain_milvus 0.3+ 用 MilvusClient (新 API), 但底层 _extract_fields()
+          又用了 pymilvus.orm.Collection (旧 API), 两套 API 的连接注册表不通,
+          必须先桥接 alias —— 见 harness/rag/milvus.connect_orm_alias().
         - 必须用 uri 而非 host+port (MilvusClient 的强制要求)
     """
-    uri = f"http://{settings.milvus_host}:{settings.milvus_port}"
-
-    # 先创建 MilvusClient, 拿到内部 alias (形如 "cm-xxxxxx")
-    probe_client = MilvusClient(uri=uri)
-    internal_alias = probe_client._using
-
-    # 把同一 alias 注册到 ORM connections registry
-    # (pymilvus.orm.Collection 会从这里查 connection)
-    if internal_alias not in [c[0] for c in connections.list_connections()]:
-        connections.connect(alias=internal_alias, uri=uri)
+    uri = milvus_uri()
+    _, internal_alias = connect_orm_alias()
 
     logger.info(
         f"创建 VectorStore: collection={settings.milvus_collection}, "
@@ -148,7 +138,7 @@ async def advanced_search(
     """
     # 延迟导入避免循环依赖
     from app.harness.rag.hybrid_retriever import _bm25_index, hybrid_search, refresh_bm25_index
-    from app.harness.rag.reranker import rerank_docs
+    from app.harness.rag.rerank import rerank_docs
 
     final_k = k or settings.rag_top_k
     use_hybrid = settings.rag_hybrid_enabled if use_hybrid is None else use_hybrid

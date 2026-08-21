@@ -30,7 +30,7 @@ from typing import Any, Dict, List, Literal, Optional, Set
 
 from pydantic import BaseModel, Field
 
-from app.harness.tools.meta import get_meta
+from app.harness.tools.meta import HIGH_RISK_TOOLS, NOTIFICATION_TOOLS, get_meta
 
 
 # ============================================================
@@ -83,19 +83,6 @@ class PermissionDecision(BaseModel):
 # ============================================================
 # 决策函数
 # ============================================================
-# 注意: 这些集合从 tool_filter 获取, 但为了避免循环 import 用延迟 import
-def _get_high_risk_set() -> Set[str]:
-    from app.harness.runtime.tool_filter import HIGH_RISK_TOOLS
-
-    return HIGH_RISK_TOOLS
-
-
-def _get_notification_set() -> Set[str]:
-    from app.harness.runtime.tool_filter import NOTIFICATION_TOOLS
-
-    return NOTIFICATION_TOOLS
-
-
 def evaluate_permission(
     tool_name: str,
     tool_input: Optional[Dict[str, Any]] = None,
@@ -162,7 +149,7 @@ def evaluate_permission(
 
     if mode == PermissionMode.ASK_DESTRUCTIVE:
         # 写工具或通知工具 → 走人工审批
-        if meta.destructive or meta.is_notification or tool_name in _get_high_risk_set():
+        if meta.destructive or meta.is_notification or tool_name in HIGH_RISK_TOOLS:
             return PermissionDecision(
                 behavior="ask",
                 reason_type="mode_ask",
@@ -171,14 +158,14 @@ def evaluate_permission(
             )
 
     # ---- Layer 2: 静态 Guardrails (与原 _is_tool_allowed_by_guardrails 等价) ----
-    if block_high_risk and tool_name in _get_high_risk_set():
+    if block_high_risk and tool_name in HIGH_RISK_TOOLS:
         return PermissionDecision(
             behavior="deny",
             reason_type="guardrail_high",
             reason=f"高危工具 {tool_name!r} 被默认拦截 (settings.guardrails_block_high_risk_tools=True)",
         )
 
-    if not allow_notification and tool_name in _get_notification_set():
+    if not allow_notification and tool_name in NOTIFICATION_TOOLS:
         return PermissionDecision(
             behavior="deny",
             reason_type="guardrail_notify",

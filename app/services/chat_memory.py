@@ -64,18 +64,16 @@ async def _get_redis() -> Any | None:
         return None
     if _redis_client is not None:
         return _redis_client
+    from app.db.redis import open_client
+
     try:
-        from redis.asyncio import Redis
-    except Exception as e:
+        _redis_client = await open_client(settings.redis_url, decode_responses=True)
+        logger.info(f"[chat-memory] Redis 会话记忆已连接: {settings.redis_url}")
+        return _redis_client
+    except ImportError as e:
         _redis_import_failed = True
         logger.warning(f"[chat-memory] redis 包不可用, 会话记忆降级关闭: {e}")
         return None
-    try:
-        client = Redis.from_url(settings.redis_url, decode_responses=True)
-        await client.ping()
-        _redis_client = client
-        logger.info(f"[chat-memory] Redis 会话记忆已连接: {settings.redis_url}")
-        return _redis_client
     except Exception as e:
         if not _redis_connect_failed_logged:
             logger.warning(f"[chat-memory] Redis 连接失败, 会话记忆降级关闭: {type(e).__name__}: {e}")

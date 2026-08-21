@@ -26,7 +26,8 @@ from app.harness.runtime.tool_runner import run_parallel_agent
 import app.services.chat_memory as chat_memory
 from app.services.rag.memory import compact_if_needed, rewrite_question
 from app.harness.rag.retrieval import build_context
-from app.services.rag.message_utils import content_to_text, history_to_messages
+from app.harness.core.llm_parse import content_to_text
+from app.services.rag.message_utils import history_to_messages
 from app.services.rag.web_context import build_web_context
 from app.harness.tools.loader import get_base_tools
 from app.harness.tools.meta import get_meta

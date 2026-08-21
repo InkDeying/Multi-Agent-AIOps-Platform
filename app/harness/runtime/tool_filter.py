@@ -10,7 +10,7 @@
               deny 工具直接不给 LLM 看, LLM 想都想不到去调
 """
 
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from langchain_core.tools import BaseTool
 from loguru import logger
@@ -23,30 +23,24 @@ from app.harness.runtime.permissions import (
 )
 from app.harness.skills.registry import get_skill_registry
 from app.harness.mcp.lazy_tools import expose_tools_with_lazy_mcp
-from app.harness.tools.meta import TOOL_META, get_meta
+from app.harness.tools.meta import (
+    HIGH_RISK_TOOLS,
+    NOTIFICATION_TOOLS,
+    RiskLevel,
+    get_meta,
+)
 
-ToolRisk = Literal["low", "medium", "high"]
-
-
-# ============================================================
-# 高危 / 通知工具集合 (派生自 TOOL_META, 给 evaluate_permission 用)
-# ============================================================
-# 高危 = risk_level == "high" 或 destructive == True
-# 通知 = is_notification == True
-HIGH_RISK_TOOLS: set[str] = {
-    name
-    for name, meta in TOOL_META.items()
-    if meta.risk_level == "high" or meta.destructive
-}
-
-NOTIFICATION_TOOLS: set[str] = {
-    name
-    for name, meta in TOOL_META.items()
-    if meta.is_notification
-}
+# 这两个集合和风险等级类型的定义已上移到 tools/meta.py (它们是 TOOL_META 的派生视图),
+# 这里只转出, 保持既有导入路径可用。
+__all__ = [
+    "HIGH_RISK_TOOLS",
+    "NOTIFICATION_TOOLS",
+    "RiskLevel",
+    "filter_tools_for_skill",
+]
 
 
-def _tool_risk(tool_name: str) -> ToolRisk:
+def _tool_risk(tool_name: str) -> RiskLevel:
     return get_meta(tool_name).risk_level
 
 

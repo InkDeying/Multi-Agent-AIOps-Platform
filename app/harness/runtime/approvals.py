@@ -16,29 +16,16 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
 from app.config import settings
-from app.db.utils import json_dump, new_id
-from app.db.postgres import get_pool
+from app.db.base import acquire, row_to_dict, rows_to_dicts
+from app.db.base import json_dump, new_id
 
-
-def _row_to_dict(row: Any | None) -> dict[str, Any] | None:
-    if row is None:
-        return None
-    item = dict(row)
-    for key in ("tool_args",):
-        v = item.get(key)
-        if isinstance(v, str):
-            try:
-                item[key] = json.loads(v)
-            except Exception:
-                pass
-    return item
+_JSON_KEYS = ("tool_args",)
 
 
 class ApprovalRepository:
@@ -60,8 +47,7 @@ class ApprovalRepository:
         expires = datetime.now(timezone.utc) + timedelta(
             seconds=expires_in_sec or settings.approvals_timeout_sec
         )
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+        async with acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO approval_requests (
@@ -88,18 +74,16 @@ class ApprovalRepository:
         return req_id
 
     async def get_request(self, req_id: str) -> dict[str, Any] | None:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+        async with acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM approval_requests WHERE id = $1",
                 req_id,
             )
-        return _row_to_dict(row)
+        return row_to_dict(row, _JSON_KEYS)
 
     async def list_pending(self, *, limit: int = 50) -> List[dict[str, Any]]:
         """前端 inbox 拉这个: 待人工确认的请求, 按创建时间倒序."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+        async with acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT * FROM approval_requests
@@ -109,12 +93,11 @@ class ApprovalRepository:
                 """,
                 max(1, min(limit, 200)),
             )
-        return [_row_to_dict(r) or {} for r in rows]
+        return rows_to_dicts(rows, _JSON_KEYS)
 
     async def list_recent(self, *, limit: int = 50) -> List[dict[str, Any]]:
         """历史: 含 approved/denied/timeout, 给审计页用."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+        async with acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT * FROM approval_requests
@@ -123,7 +106,7 @@ class ApprovalRepository:
                 """,
                 max(1, min(limit, 200)),
             )
-        return [_row_to_dict(r) or {} for r in rows]
+        return rows_to_dicts(rows, _JSON_KEYS)
 
     async def decide(
         self,
@@ -136,8 +119,7 @@ class ApprovalRepository:
         """前端 POST 调这个写入决策. 只允许 pending → approved/denied."""
         if decision not in ("approved", "denied", "cancelled"):
             raise ValueError(f"unknown decision: {decision!r}")
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+        async with acquire() as conn:
             row = await conn.fetchrow(
                 """
                 UPDATE approval_requests
@@ -157,7 +139,7 @@ class ApprovalRepository:
             logger.warning(f"[approvals] decide id={req_id} 失败: 不是 pending 或不存在")
             return None
         logger.info(f"[approvals] decided id={req_id} -> {decision} by={decided_by!r}")
-        return _row_to_dict(row)
+        return row_to_dict(row, _JSON_KEYS)
 
     async def wait_for_decision(
         self,
@@ -189,8 +171,7 @@ class ApprovalRepository:
             if asyncio.get_event_loop().time() >= deadline:
                 # 超时: 顺手回写 status=timeout
                 try:
-                    pool = await get_pool()
-                    async with pool.acquire() as conn:
+                    async with acquire() as conn:
                         await conn.execute(
                             """
                             UPDATE approval_requests

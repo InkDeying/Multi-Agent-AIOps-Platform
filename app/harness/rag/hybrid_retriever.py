@@ -193,16 +193,13 @@ def _load_all_chunks_from_milvus() -> List[Document]:
     这里为 demo 简化, 生产环境建议维护独立元数据表.
     """
     try:
-        from pymilvus import Collection, MilvusClient, connections
+        from pymilvus import Collection
 
-        uri = f"http://{settings.milvus_host}:{settings.milvus_port}"
-        client = MilvusClient(uri=uri)
+        from app.harness.rag.milvus import connect_orm_alias
+
+        client, alias = connect_orm_alias()
         if not client.has_collection(settings.milvus_collection):
             return []
-
-        alias = client._using
-        if alias not in [c[0] for c in connections.list_connections()]:
-            connections.connect(alias=alias, uri=uri)
 
         col = Collection(settings.milvus_collection, using=alias)
         col.load()

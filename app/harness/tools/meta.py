@@ -331,6 +331,25 @@ TOOL_META: Dict[str, ToolMeta] = {
 
 
 # ============================================================
+# 派生风险集合
+# ============================================================
+# 原先这两个集合定义在 runtime/tool_filter.py, 而 runtime/permissions.py 又要用它们,
+# 于是 permissions 只能靠函数内延迟 import 反向拿 —— 一个自己写在注释里承认的循环依赖。
+# 它们本质是 TOOL_META 的派生视图, 所以归属这里, 循环随之消失。
+#   高危 = risk_level == "high" 或 destructive == True
+#   通知 = is_notification == True
+HIGH_RISK_TOOLS: set[str] = {
+    name
+    for name, meta in TOOL_META.items()
+    if meta.risk_level == "high" or meta.destructive
+}
+
+NOTIFICATION_TOOLS: set[str] = {
+    name for name, meta in TOOL_META.items() if meta.is_notification
+}
+
+
+# ============================================================
 # 公共 API
 # ============================================================
 _CONSERVATIVE_DEFAULT = ToolMeta()  # read_only=False, concurrency_safe=False, ...

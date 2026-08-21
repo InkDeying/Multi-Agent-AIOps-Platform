@@ -11,28 +11,8 @@ from loguru import logger
 
 from app.agents.deep.state import DeepDiagnosisState
 from app.incidents.models import EvidenceSource
+from app.harness.prompts.deep import RCA_SYSTEM_PROMPT as _RCA_SYSTEM_PROMPT
 from app.harness.runtime.transitions import DEEP_RCA_JUDGED, make_transition
-
-
-# Prompt 明确禁止读取 content 原文，确保 RCA 的输入边界可审计。
-_RCA_SYSTEM_PROMPT = (
-    "你是 SRE 根因判定法官 (RCA Judge)。下面给你一组**候选根因** (已按确定性算法初排序) 和"
-    "一组**关键证据 summary** (来自多个专业 Agent 的观察结论)。\n"
-    "你的职责: ① 对候选**重新排序**, 把最可能的根因排第一; ② 写一段≤200 字的中文判定理由;"
-    "③ 列出最关键的 3-5 个支持证据 (按 evidence_id, 取 evidence_ids 字段里的引用)。\n\n"
-    "硬性约束:\n"
-    "1. **只看本 prompt 给的 summary, 不要假设你看过原始日志/指标/调用链**;\n"
-    "2. 优先看 metric 类证据 (现场实测), 次看 infra (运行环境/依赖), 再看 log/runbook 和 incident_history;\n"
-    "3. 如果有标记 error 的证据, 说明对应 Agent 失败, 在 reasoning 里点明这部分信息缺失;\n"
-    "4. 只输出一个 JSON 对象, 不要任何解释或 markdown 围栏。字段:\n"
-    "   {\n"
-    '     "root_cause": "<一句话最可能根因>",\n'
-    '     "ranked_candidates": ["<按可能性降序的 candidate 文本列表>"],\n'
-    '     "supporting_evidence_ids": ["ev_X", ...],\n'
-    '     "reasoning": "<判定理由 (中文, ≤200 字)>",\n'
-    '     "confidence": <0.0-1.0>\n'
-    "   }"
-)
 
 
 def _build_rca_user_prompt(

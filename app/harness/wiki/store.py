@@ -19,25 +19,22 @@
 
 from __future__ import annotations
 
-import asyncio
-import os
-import re
-import time
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator, TextIO
-
-if os.name == "nt":
-    import msvcrt
-else:
-    import fcntl
 
 from loguru import logger
 
 from app.config import settings
 from app.harness.core.llm import get_chat_llm
 from app.harness.core.llm_parse import extract_json
+from app.harness.wiki.file_lock import wiki_write_guard
+from app.harness.wiki.text_utils import (
+    WIKILINK_RE,
+    coerce_text,
+    parse_target,
+    slug,
+    tokenize,
+)
 
 # data/wiki/ 在仓库根下 (app/harness/wiki/store.py -> parents[3] = repo root)
 _WIKI_DIR = Path(__file__).resolve().parents[3] / "data" / "wiki"
@@ -47,119 +44,27 @@ _INDEX = _WIKI_DIR / "index.md"
 _LOG = _WIKI_DIR / "log.md"
 _LOCK_FILE = _WIKI_DIR / ".write.lock"
 
-_write_lock = asyncio.Lock()  # 单进程内串行化 wiki 写, 防并行诊断互踩同页
-
-_SLUG_RE = re.compile(r"[^a-z0-9]+")
-_CJK = re.compile(r"[一-鿿]")
-_WORD = re.compile(r"[a-z0-9_]{2,}")
-_WIKILINK = re.compile(r"\[\[([^\]]+)\]\]")
-_FILE_LOCK_TIMEOUT_SEC = 30.0
-
-
-def _slug(text: Any, fallback: str = "unknown") -> str:
-    s = _SLUG_RE.sub("-", str(text or "").lower()).strip("-")
-    return (s or fallback)[:64]
-
-
-def _tokenize(text: Any) -> set[str]:
-    s = str(text or "").lower()
-    return set(_WORD.findall(s)) | set(_CJK.findall(s))
-
 
 def _now() -> str:
+    """返回 Wiki 流水使用的 UTC 日期."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-def _read(p: Path) -> str:
+def _read(path: Path) -> str:
+    """best-effort 读取 Markdown; 文件不存在或读取失败都视为空页."""
     try:
-        return p.read_text(encoding="utf-8") if p.exists() else ""
+        return path.read_text(encoding="utf-8") if path.exists() else ""
     except Exception:
         return ""
 
 
-def _write(p: Path, content: str) -> None:
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content if content.endswith("\n") else content + "\n", encoding="utf-8")
-
-
-def _acquire_file_lock(handle: TextIO) -> None:
-    """Acquire an exclusive lock compatible with the current operating system."""
-    if os.name != "nt":
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        return
-
-    # msvcrt locks byte ranges. Keep one byte in the lock file and retry because
-    # LK_NBLCK fails immediately while another API/Worker process owns the lock.
-    handle.seek(0)
-    if not handle.read(1):
-        handle.seek(0)
-        handle.write("0")
-        handle.flush()
-
-    deadline = time.monotonic() + _FILE_LOCK_TIMEOUT_SEC
-    while True:
-        try:
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-            return
-        except OSError:
-            if time.monotonic() >= deadline:
-                raise TimeoutError("Timed out waiting for the LLM Wiki write lock")
-            time.sleep(0.1)
-
-
-def _release_file_lock(handle: TextIO) -> None:
-    """Release a lock acquired by _acquire_file_lock."""
-    if os.name != "nt":
-        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-        return
-
-    handle.seek(0)
-    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-
-
-@asynccontextmanager
-async def _wiki_write_guard() -> AsyncIterator[None]:
-    """Serialize Wiki read/merge/write across API processes and workers."""
-    handle: TextIO | None = None
-    async with _write_lock:
-        try:
-            _WIKI_DIR.mkdir(parents=True, exist_ok=True)
-            handle = await asyncio.to_thread(_LOCK_FILE.open, "a+", encoding="utf-8")
-            await asyncio.to_thread(_acquire_file_lock, handle)
-            yield
-        finally:
-            if handle is not None:
-                try:
-                    await asyncio.to_thread(_release_file_lock, handle)
-                finally:
-                    handle.close()
-
-
-def _coerce_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict):
-                parts.append(str(block.get("text") or block.get("content") or ""))
-        return "".join(parts)
-    return str(content or "")
-
-
-def _parse_target(signature: str, query: str) -> tuple[str, str]:
-    """从 alert_signature ("alertname|service") 解析出 (service, pattern_slug)。
-
-    手动诊断无 signature 时, service 留空、pattern 用 query 关键词派生。
-    """
-    service = ""
-    if signature and "|" in signature:
-        service = signature.split("|", 1)[1].strip()
-    pattern_slug = _slug(signature or query, fallback="incident")
-    return service, pattern_slug
+def _write(path: Path, content: str) -> None:
+    """写 UTF-8 Markdown, 自动建目录并保证文件以换行结束."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        content if content.endswith("\n") else content + "\n",
+        encoding="utf-8",
+    )
 
 
 # ==================== index / log 维护 ====================
@@ -207,9 +112,9 @@ async def ingest_diagnosis(
     if not settings.wiki_enabled:
         return False
     try:
-        async with _wiki_write_guard():
-            service, pat = _parse_target(signature, query)
-            svc_path = (_SERVICES / f"{_slug(service)}.md") if service else None
+        async with wiki_write_guard(_WIKI_DIR, _LOCK_FILE):
+            service, pat = parse_target(signature, query)
+            svc_path = (_SERVICES / f"{slug(service)}.md") if service else None
             pat_path = _PATTERNS / f"{pat}.md"
             existing_svc = _read(svc_path) if svc_path else ""
             existing_pat = _read(pat_path)
@@ -218,12 +123,12 @@ async def ingest_diagnosis(
                 model = settings.wiki_summary_model or settings.dashscope_router_model
                 user = (
                     f"# 本次诊断\n诉求: {str(query or '')[:400]}\n\n报告:\n{str(report_text or '')[:3000]}\n\n"
-                    f"# 现有 service 页 ({'services/' + _slug(service) if service else '无'})\n{existing_svc or '(新页/无)'}\n\n"
+                    f"# 现有 service 页 ({'services/' + slug(service) if service else '无'})\n{existing_svc or '(新页/无)'}\n\n"
                     f"# 现有 pattern 页 (patterns/{pat})\n{existing_pat or '(新页)'}"
                 )
                 llm = get_chat_llm(model=model, temperature=0.0, timeout=60.0)
                 resp = await llm.ainvoke([("system", _INGEST_SYS), ("human", user)])
-                parsed = extract_json(_coerce_text(getattr(resp, "content", "")), source="wiki ingest")
+                parsed = extract_json(coerce_text(getattr(resp, "content", "")), source="wiki ingest")
                 svc_md = str(parsed.get("service_page") or existing_svc).strip()
                 pat_md = str(parsed.get("pattern_page") or "").strip()
                 index_summary = str(parsed.get("index_summary") or "").strip()
@@ -244,11 +149,11 @@ async def ingest_diagnosis(
             _write(pat_path, pat_md)
             _update_index(f"patterns/{pat}", index_summary or pat)
             if service and svc_md:
-                _update_index(f"services/{_slug(service)}", f"服务 {service} 的故障知识汇总")
+                _update_index(f"services/{slug(service)}", f"服务 {service} 的故障知识汇总")
             _append_log(f"diagnosis | {log_line or pat}")
         logger.info(
             f"[wiki] ingested -> patterns/{pat}.md"
-            + (f" + services/{_slug(service)}.md" if (svc_path and svc_md) else "")
+            + (f" + services/{slug(service)}.md" if (svc_path and svc_md) else "")
         )
         return True
     except Exception as exc:
@@ -267,13 +172,13 @@ async def recall_block(*, query: str = "", signature: str = "", limit_chars: int
     if not settings.wiki_enabled or not settings.wiki_recall_enabled:
         return ""
     try:
-        service, pat = _parse_target(signature, query)
+        service, pat = parse_target(signature, query)
         max_chars = limit_chars if limit_chars is not None else settings.wiki_recall_max_chars
         pages: list[Path] = []
 
         # ① 直达: service 页 + pattern 页
         if service:
-            sp = _SERVICES / f"{_slug(service)}.md"
+            sp = _SERVICES / f"{slug(service)}.md"
             if sp.exists():
                 pages.append(sp)
         pp = _PATTERNS / f"{pat}.md"
@@ -282,13 +187,13 @@ async def recall_block(*, query: str = "", signature: str = "", limit_chars: int
 
         # ② 兜底: 读 index, 按 query 与目录行的关键词重叠挑 top-2 页
         if not pages:
-            qt = _tokenize(query)
+            qt = tokenize(query)
             scored: list[tuple[int, str]] = []
             for ln in _read(_INDEX).splitlines():
-                m = _WIKILINK.search(ln)
+                m = WIKILINK_RE.search(ln)
                 if not m:
                     continue
-                score = len(qt & _tokenize(ln))
+                score = len(qt & tokenize(ln))
                 if score > 0:
                     scored.append((score, m.group(1)))
             scored.sort(key=lambda x: x[0], reverse=True)
@@ -327,7 +232,7 @@ def lint() -> dict[str, list[str]]:
     if not _WIKI_DIR.exists():
         return findings
     index_text = _read(_INDEX)
-    all_links = set(_WIKILINK.findall(index_text))
+    all_links = set(WIKILINK_RE.findall(index_text))
     for sub in ("services", "patterns"):
         d = _WIKI_DIR / sub
         if not d.exists():

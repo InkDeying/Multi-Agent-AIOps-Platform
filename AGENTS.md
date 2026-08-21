@@ -146,17 +146,19 @@ gate; confirm credentials, cost, data scope, and service readiness first.
 | `app/api/` | HTTP/SSE ingress and request/response contracts |
 | `app/services/` | Use-case services such as diagnosis and RAG chat |
 | `app/orchestration/` | Diagnosis-mode selection, execution, audit, and event conversion |
-| `app/agents/fast/` | Fast graph, state, and Skill-Plan-Execute-Replan nodes |
-| `app/agents/deep/` | Deep graph, state, specialist nodes, evidence reduction, RCA, and reporting |
+| `app/agents/fast/` | Fast graph, state, Skill-Plan-Execute-Replan nodes, report synthesis, and reroute policy |
+| `app/agents/deep/` | Deep graph, state, specialist specs/shared runner, evidence reduction, RCA, and report rendering |
 | `app/agents/delegates/` | Reusable `delegate_to_*` agent definitions and tool adapters |
 | `app/harness/core/` | LLM factories, parsing, structured output, provider adapters, and shared Harness utilities |
-| `app/harness/rag/` | Embeddings, document splitting, Milvus, vector/hybrid retrieval, and reranking |
+| `app/harness/prompts/` | Prompt text for the fast diagnosis graph and RAG chat; runtime policy remains outside this package |
+| `app/harness/rag/` | Embeddings, document splitting, Milvus, vector/hybrid retrieval, and provider-specific reranking |
 | `app/harness/mcp/` | MCP client lifecycle and lazy MCP tool exposure |
-| `app/harness/runtime/` | Agent harness, permissions, approvals, tool orchestration, budgets, and transitions |
+| `app/harness/runtime/` | Agent harness facade, permissions, approvals, tool orchestration, budgets, errors, and replan policy |
 | `app/harness/skills/` | Skill models, loader, registry, playbooks, and Skill documentation |
 | `app/harness/tools/` | Tool metadata, local tool definitions, base-tool loading, and tool catalog |
-| `app/harness/wiki/` | Runtime LLM Wiki experience storage and recall |
-| `app/incidents/`, `app/evidence/`, `app/db/` | Incident, evidence, persistence, and schema ownership |
+| `app/harness/wiki/` | Runtime LLM Wiki experience storage, recall, cross-process locking, and deterministic text utilities |
+| `app/incidents/` | Alert normalization/correlation, incident ingestion, diagnosis-task storage, and task-scoped cleanup |
+| `app/evidence/`, `app/db/` | Evidence persistence, shared Postgres/Redis primitives, and schema ownership |
 | `app/queue/` | Redis Streams, worker coordination, distributed slots, rate limits, and queue observability |
 | `mcp_servers/` | External MCP process boundaries |
 | `benchmark/` | Retrieval/RAG evaluation datasets, runner, and generated reports |

@@ -6,30 +6,12 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from app.db.utils import json_dump, new_id
-from app.db.postgres import get_pool
+from app.db.base import acquire, rows_to_dicts
+from app.db.base import json_dump, new_id
 
-
-def _loads(value: Any) -> Any:
-    if not isinstance(value, str):
-        return value
-    try:
-        return json.loads(value)
-    except Exception:
-        return value
-
-
-def _row_to_dict(row: Any | None) -> dict[str, Any] | None:
-    if row is None:
-        return None
-    item = dict(row)
-    for key in ("args", "evidence_ids"):
-        if key in item:
-            item[key] = _loads(item[key])
-    return item
+_JSON_KEYS = ("args", "evidence_ids")
 
 
 class AgentRunRepository:
@@ -44,8 +26,7 @@ class AgentRunRepository:
         input_ref: str = "",
     ) -> str:
         run_id = new_id("run")
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+        async with acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO agent_runs (
@@ -77,8 +58,7 @@ class AgentRunRepository:
         total_tokens: int = 0,
         error: str = "",
     ) -> None:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+        async with acquire() as conn:
             await conn.execute(
                 """
                 UPDATE agent_runs
@@ -118,8 +98,7 @@ class AgentRunRepository:
         error: str = "",
     ) -> str:
         tool_call_id = new_id("tc")
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+        async with acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO tool_calls (
@@ -142,8 +121,7 @@ class AgentRunRepository:
         return tool_call_id
 
     async def list_runs_for_task(self, task_id: str) -> list[dict[str, Any]]:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+        async with acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT * FROM agent_runs
@@ -152,11 +130,10 @@ class AgentRunRepository:
                 """,
                 task_id,
             )
-        return [_row_to_dict(row) or {} for row in rows]
+        return rows_to_dicts(rows, _JSON_KEYS)
 
     async def list_tool_calls_for_task(self, task_id: str) -> list[dict[str, Any]]:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+        async with acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT * FROM tool_calls
@@ -165,7 +142,7 @@ class AgentRunRepository:
                 """,
                 task_id,
             )
-        return [_row_to_dict(row) or {} for row in rows]
+        return rows_to_dicts(rows, _JSON_KEYS)
 
 
 agent_run_repository = AgentRunRepository()

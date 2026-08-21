@@ -30,6 +30,10 @@ from pydantic import BaseModel, Field, field_validator
 #   low    = 仅读操作 (查日志/查指标/查知识库)
 #   medium = 调用外部 API, 但不写状态
 #   high   = 涉及写操作 (重启服务/删文件/改配置), 必须经 Harness 人工确认
+#
+# 这里刻意不复用 tools/meta.py 的同名别名: 那个描述"单个工具"的风险,
+# 这个描述"整个 Skill"的风险; 为一行 Literal 让 skills 包依赖 tools 包,
+# 会把 400 行 TOOL_META 拖进 Skill 加载路径, 不值得。
 RiskLevel = Literal["low", "medium", "high"]
 
 
