@@ -1,1 +1,1 @@
-"""Postgres connection, schema initialization, and persistence helpers."""
+"""Postgres, Redis, and Milvus storage adapters and persistence helpers."""

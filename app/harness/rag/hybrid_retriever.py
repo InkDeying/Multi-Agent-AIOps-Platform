@@ -195,7 +195,7 @@ def _load_all_chunks_from_milvus() -> List[Document]:
     try:
         from pymilvus import Collection
 
-        from app.harness.rag.milvus import connect_orm_alias
+        from app.db.milvus import connect_orm_alias
 
         client, alias = connect_orm_alias()
         if not client.has_collection(settings.milvus_collection):

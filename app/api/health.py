@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.harness.mcp.client import mcp_client_manager
-from app.harness.rag.milvus import milvus_manager
+from app.db.milvus import milvus_manager
 from app.db.postgres import postgres_health
 from app.queue.redis_streams import incident_queue
 from app.schemas.common import ApiResponse

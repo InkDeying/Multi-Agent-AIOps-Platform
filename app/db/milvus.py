@@ -1,9 +1,10 @@
-"""Milvus 客户端管理.
+"""Milvus 存储适配器与连接管理.
 
 职责划分:
   - 本模块: 底层连接管理 + 健康检查 + Collection 元数据管理, 以及唯一的
     "MilvusClient 内部 alias 注册进 ORM 连接表" 入口 (``connect_orm_alias``);
-  - harness/rag/vector_store.py: 高层向量操作 (用 langchain_milvus.Milvus 包装).
+  - harness/rag/vector_store.py: 高层向量操作 (用 langchain_milvus.Milvus 包装);
+  - harness/rag/retrieval.py: Parent-Child context 构造与 RAG 检索编排.
 
 为什么分两层?
   - 底层用 pymilvus, 提供精细控制 (健康检查、维度校验、强制重建)

@@ -30,7 +30,7 @@ from app.api import aiops, approvals, chat, documents, eval as eval_api
 from app.api import health, incidents, queue, skills, webhook, wiki
 from app.config import settings
 from app.harness.mcp.client import mcp_client_manager
-from app.harness.rag.milvus import milvus_manager
+from app.db.milvus import milvus_manager
 from app.db.postgres import close_postgres, connect_postgres, init_incident_schema
 from app.exceptions import AppException
 from app.logging import setup_logging

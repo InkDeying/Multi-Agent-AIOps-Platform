@@ -12,7 +12,7 @@ from fastapi import UploadFile
 from loguru import logger
 
 from app.config import settings
-from app.harness.rag.milvus import milvus_manager
+from app.db.milvus import milvus_manager
 from app.harness.rag.splitter import split_markdown
 from app.harness.rag.vector_store import get_vector_store
 from app.exceptions import (

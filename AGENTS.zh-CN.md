@@ -125,14 +125,14 @@ python benchmark/run_benchmark.py ragas --limit 5
 | `app/agents/delegates/` | 可复用的 `delegate_to_*` Agent 定义和工具适配器 |
 | `app/harness/core/` | LLM 工厂、解析、结构化输出、Provider 适配和 Harness 通用能力 |
 | `app/harness/prompts/` | fast 诊断图和 RAG Chat 的 prompt 文本；运行时策略不放在这里 |
-| `app/harness/rag/` | RAG 能力，包括 query 改写、历史摘要压缩、Embedding、文档切分、Milvus、向量/混合检索和按 Provider 拆分的 Rerank |
+| `app/harness/rag/` | RAG 能力，包括 query 改写、历史摘要压缩、Embedding、文档切分、向量/混合检索和按 Provider 拆分的 Rerank |
 | `app/harness/mcp/` | MCP 客户端生命周期和 Lazy MCP 工具暴露 |
 | `app/harness/runtime/` | Agent Harness 门面、权限、审批、工具编排、预算、错误和 replan 策略 |
 | `app/harness/skills/` | Skill 模型、加载器、注册表、Playbook 和 Skill 文档 |
 | `app/harness/tools/` | 工具元数据、本地工具、基础工具加载和工具目录 |
 | `app/harness/wiki/` | 运行时 LLM Wiki 经验存储、召回、跨进程写锁和确定性文本工具 |
 | `app/incidents/` | 告警归一化/关联、事件入库、诊断任务持久化和任务级清理 |
-| `app/evidence/`、`app/db/` | 证据持久化、Postgres/Redis 共享原语和 Schema |
+| `app/evidence/`、`app/db/` | 证据持久化、Postgres/Redis/Milvus 共享原语和 Schema |
 | `app/queue/` | Redis Streams、Worker 协调、分布式并发槽、接口限流和队列可观测性 |
 | `mcp_servers/` | 外部 MCP 进程边界 |
 | `benchmark/` | 检索/RAG 评测数据集、运行器和生成报告 |

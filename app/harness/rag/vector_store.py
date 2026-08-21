@@ -1,7 +1,7 @@
 """LangChain VectorStore 封装 + 高级检索流水线.
 
 为什么需要这一层?
-  - harness/rag/milvus.py 提供底层连接 (pymilvus 直接用)
+  - app/db/milvus.py 提供底层连接 (pymilvus 直接用)
   - 本模块用 langchain_milvus.Milvus 包一层, 提供 LangChain 标准 VectorStore 接口
   - 这样可以无缝接入 LangChain 的 Retriever / RAG Chain 等高层能力
 
@@ -24,7 +24,7 @@ from loguru import logger
 
 from app.config import settings
 from app.harness.rag.embedding import get_embeddings
-from app.harness.rag.milvus import connect_orm_alias, milvus_uri
+from app.db.milvus import connect_orm_alias, milvus_uri
 
 
 @lru_cache(maxsize=1)
@@ -37,7 +37,7 @@ def get_vector_store() -> Milvus:
     Notes:
         - langchain_milvus 0.3+ 用 MilvusClient (新 API), 但底层 _extract_fields()
           又用了 pymilvus.orm.Collection (旧 API), 两套 API 的连接注册表不通,
-          必须先桥接 alias —— 见 harness/rag/milvus.connect_orm_alias().
+          必须先桥接 alias —— 见 app/db/milvus.connect_orm_alias().
         - 必须用 uri 而非 host+port (MilvusClient 的强制要求)
     """
     uri = milvus_uri()

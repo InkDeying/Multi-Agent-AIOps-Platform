@@ -151,14 +151,14 @@ gate; confirm credentials, cost, data scope, and service readiness first.
 | `app/agents/delegates/` | Reusable `delegate_to_*` agent definitions and tool adapters |
 | `app/harness/core/` | LLM factories, parsing, structured output, provider adapters, and shared Harness utilities |
 | `app/harness/prompts/` | Prompt text for the fast diagnosis graph and RAG chat; runtime policy remains outside this package |
-| `app/harness/rag/` | RAG capabilities including query rewriting, history summarization, embeddings, document splitting, Milvus, vector/hybrid retrieval, and provider-specific reranking |
+| `app/harness/rag/` | RAG capabilities including query rewriting, history summarization, embeddings, document splitting, vector/hybrid retrieval, and provider-specific reranking |
 | `app/harness/mcp/` | MCP client lifecycle and lazy MCP tool exposure |
 | `app/harness/runtime/` | Agent harness facade, permissions, approvals, tool orchestration, budgets, errors, and replan policy |
 | `app/harness/skills/` | Skill models, loader, registry, playbooks, and Skill documentation |
 | `app/harness/tools/` | Tool metadata, local tool definitions, base-tool loading, and tool catalog |
 | `app/harness/wiki/` | Runtime LLM Wiki experience storage, recall, cross-process locking, and deterministic text utilities |
 | `app/incidents/` | Alert normalization/correlation, incident ingestion, diagnosis-task storage, and task-scoped cleanup |
-| `app/evidence/`, `app/db/` | Evidence persistence, shared Postgres/Redis primitives, and schema ownership |
+| `app/evidence/`, `app/db/` | Evidence persistence, shared Postgres/Redis/Milvus primitives, and schema ownership |
 | `app/queue/` | Redis Streams, worker coordination, distributed slots, rate limits, and queue observability |
 | `mcp_servers/` | External MCP process boundaries |
 | `benchmark/` | Retrieval/RAG evaluation datasets, runner, and generated reports |
