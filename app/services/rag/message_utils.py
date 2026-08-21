@@ -1,22 +1,8 @@
-"""RAG 工具函数: 消息格式化."""
+"""RAG Chat 服务层的消息转换工具."""
 
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
-
-
-
-def format_history(messages: list[dict[str, Any]]) -> str:
-    """把 [{role, content}, ...] 渲染成给 prompt 看的多行文本."""
-    if not messages:
-        return "(无)"
-    lines = []
-    for item in messages:
-        role = "用户" if item.get("role") == "user" else "助手"
-        content = str(item.get("content") or "").strip()
-        if content:
-            lines.append(f"{role}: {content[:1200]}")
-    return "\n".join(lines) if lines else "(无)"
 
 
 def history_to_messages(messages: list[dict[str, Any]]) -> list[HumanMessage | AIMessage]:

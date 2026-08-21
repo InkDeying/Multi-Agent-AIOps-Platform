@@ -167,6 +167,10 @@ Markdown / SOP / Alert corpus
     -> top-k parent context
 ```
 
+RAG Chat 的 query 改写和历史摘要压缩位于 `app/harness/rag/memory.py`，只负责
+LLM 驱动的文本变换；Redis 会话读取、压缩阈值、消息裁剪和摘要写回位于
+`app/services/rag/memory.py`，避免 Harness 反向依赖 Services。
+
 默认公开语料包括 954 条 Prometheus 告警文档、通用/Redis/MySQL SOP 和评测 Runbook。
 `scripts/convert_log_templates.py` 可以从用户提供的 loghub-2.0 数据额外生成日志模板，但这些模板
 不随默认公开仓库分发。

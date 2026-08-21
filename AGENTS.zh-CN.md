@@ -125,7 +125,7 @@ python benchmark/run_benchmark.py ragas --limit 5
 | `app/agents/delegates/` | 可复用的 `delegate_to_*` Agent 定义和工具适配器 |
 | `app/harness/core/` | LLM 工厂、解析、结构化输出、Provider 适配和 Harness 通用能力 |
 | `app/harness/prompts/` | fast 诊断图和 RAG Chat 的 prompt 文本；运行时策略不放在这里 |
-| `app/harness/rag/` | Embedding、文档切分、Milvus、向量/混合检索和按 Provider 拆分的 Rerank |
+| `app/harness/rag/` | RAG 能力，包括 query 改写、历史摘要压缩、Embedding、文档切分、Milvus、向量/混合检索和按 Provider 拆分的 Rerank |
 | `app/harness/mcp/` | MCP 客户端生命周期和 Lazy MCP 工具暴露 |
 | `app/harness/runtime/` | Agent Harness 门面、权限、审批、工具编排、预算、错误和 replan 策略 |
 | `app/harness/skills/` | Skill 模型、加载器、注册表、Playbook 和 Skill 文档 |

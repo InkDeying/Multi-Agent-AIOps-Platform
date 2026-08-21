@@ -2,8 +2,9 @@
 
 仅负责把各子模块拼成 SSE 事件流, 具体逻辑在:
   - app.harness.rag.retrieval              知识库检索 + context 拼接 (中性原语层)
+  - app.harness.rag.memory                 query 改写 + 历史摘要压缩 (RAG 能力层)
   - app.services.rag.web_context   联网搜索 + 安全过滤
-  - app.services.rag.memory        query 改写 + 历史压缩
+  - app.services.rag.memory        Redis 会话记忆与压缩写回 (服务编排层)
   - app.harness.runtime.agent_harness      Prompt / 轮次 / 降级策略
   - app.services.rag.message_utils 消息格式化辅助
 """
@@ -24,9 +25,10 @@ from app.harness.core.llm import get_chat_llm
 from app.harness.runtime.agent_harness import HarnessUsageStats, get_agent_harness
 from app.harness.runtime.tool_runner import run_parallel_agent
 import app.services.chat_memory as chat_memory
-from app.services.rag.memory import compact_if_needed, rewrite_question
+from app.harness.rag.memory import rewrite_question
 from app.harness.rag.retrieval import build_context
 from app.harness.core.llm_parse import content_to_text
+from app.services.rag.memory import compact_if_needed
 from app.services.rag.message_utils import history_to_messages
 from app.services.rag.web_context import build_web_context
 from app.harness.tools.loader import get_base_tools
@@ -135,10 +137,14 @@ async def stream_chat(
         yield progress(
             "rewrite", "正在改写查询", "融合历史上下文与指代补全", mark_start=True
         )
-    rewritten_question = await rewrite_question(
-        question,
-        summary=session.get("summary") or "",
-        recent_messages=recent_messages,
+    rewritten_question = (
+        await rewrite_question(
+            question,
+            summary=session.get("summary") or "",
+            recent_messages=recent_messages,
+        )
+        if need_rewrite
+        else question
     )
     if need_rewrite:
         rewrite_data = {"original": question, "rewritten": rewritten_question}

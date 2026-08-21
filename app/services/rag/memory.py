@@ -1,53 +1,16 @@
-"""RAG Chat 的会话记忆操作: query 改写 + 历史压缩."""
+"""RAG Chat 的会话记忆持久化编排.
+
+LLM 驱动的 query 改写和历史摘要压缩位于 ``app.harness.rag.memory``。
+本模块只负责 Redis 会话读取、压缩阈值判断、消息裁剪和结果写回。
+"""
 
 from __future__ import annotations
 
-from typing import Any
-
-from langchain_core.messages import HumanMessage
 from loguru import logger
 
 from app.config import settings
-from app.harness.core.llm import get_chat_llm
-from app.harness.runtime.agent_harness import get_agent_harness
+from app.harness.rag.memory import summarize_history
 import app.services.chat_memory as chat_memory
-from app.harness.core.llm_parse import content_to_text
-from app.services.rag.message_utils import format_history
-
-
-async def rewrite_question(
-    question: str,
-    *,
-    summary: str,
-    recent_messages: list[dict[str, Any]],
-) -> str:
-    """用历史 + summary 改写当前问题为独立检索 query, 失败回退到原文."""
-    if not settings.rag_chat_memory_enabled or not settings.rag_chat_rewrite_enabled:
-        return question
-    if not summary and not recent_messages:
-        return question
-    try:
-        harness = get_agent_harness()
-        prompt = harness.build_rag_rewrite_prompt(
-            summary=summary or "(无)",
-            history=format_history(recent_messages),
-            question=question,
-        )
-        llm = get_chat_llm(
-            model=harness.rag_rewrite_model(),
-            temperature=0,
-            streaming=False,
-            timeout=20,
-            max_retries=1,
-        )
-        resp = await llm.ainvoke([HumanMessage(content=prompt)])
-        rewritten = content_to_text(resp.content).strip().strip("\"'")
-        if rewritten:
-            logger.info(f"[rag] query rewrite: {question[:80]} -> {rewritten[:120]}")
-            return rewritten[:1000]
-    except Exception as e:
-        logger.warning(f"[rag] query rewrite 失败, 使用原始问题: {type(e).__name__}: {e}")
-    return question
 
 
 async def compact_if_needed(session_id: str) -> None:
@@ -64,21 +27,11 @@ async def compact_if_needed(session_id: str) -> None:
         return
     old_summary = await chat_memory.get_summary(session_id)
     try:
-        harness = get_agent_harness()
-        prompt = harness.build_rag_compact_prompt(
+        summary = await summarize_history(
             max_chars=settings.rag_chat_summary_max_chars,
             old_summary=old_summary or "(无)",
-            old_messages=format_history(old_messages),
+            old_messages=old_messages,
         )
-        llm = get_chat_llm(
-            model=harness.rag_compact_model(),
-            temperature=0,
-            streaming=False,
-            timeout=40,
-            max_retries=1,
-        )
-        resp = await llm.ainvoke([HumanMessage(content=prompt)])
-        summary = content_to_text(resp.content).strip()
         if summary:
             await chat_memory.set_summary(
                 session_id, summary[: settings.rag_chat_summary_max_chars]
@@ -88,5 +41,5 @@ async def compact_if_needed(session_id: str) -> None:
                 f"[rag] session={session_id} compact 完成: "
                 f"{len(all_messages)} -> {len(recent_messages)} messages"
             )
-    except Exception as e:
-        logger.warning(f"[rag] compact 失败, 保留原历史: {type(e).__name__}: {e}")
+    except Exception as exc:
+        logger.warning(f"[rag] compact 写回失败, 保留原历史: {type(exc).__name__}: {exc}")
