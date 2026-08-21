@@ -37,6 +37,14 @@ class DeepDiagnosisState(TypedDict, total=False):
     incident_group_id: str
     incident_id: str
     task_id: str
+    # 编排层预加载的事实和经验；节点不得自行访问 Postgres 或 Wiki 文件。
+    task_context: Dict[str, Any]
+    task_context_status: str
+    task_context_error_type: str
+    incident_group_context: Dict[str, Any]
+    incident_group_context_status: str
+    incident_group_context_error_type: str
+    wiki_context: str
 
     # —— ③ EvidencePlan: 派哪几个专业 Agent + 取证策略 ——
     # 图的四路 fan-out 固定存在，未入选的节点由 dispatch guard 跳过。

@@ -14,12 +14,10 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
-from app.queue import rate_limiter
-from app.incidents.models import DiagnosisMode
-from app.incidents.repository import incident_repository
-from app.queue.redis_streams import incident_queue, level_for_severity
+from app.api import rate_limit
 from app.schemas.aiops import DiagnosisRequest
 import app.services.aiops_service as aiops_service
+from app.services import diagnosis_submission_service
 
 router = APIRouter(prefix="/aiops", tags=["aiops"])
 
@@ -44,67 +42,20 @@ async def submit_diagnose(req: DiagnoseSubmitRequest, request: Request) -> dict[
       - 返回 queue_position 让前端显示『前方还有 N 个』。
     """
     # 限流 (改造文档第 8 步): 单 IP 每分钟手动诊断次数上限, 超限 429
-    await rate_limiter.enforce(
-        "manual", rate_limiter.client_ip(request),
+    await rate_limit.enforce(
+        "manual", rate_limit.client_ip(request),
         settings.rate_limit_manual_per_ip_per_min, 60,
     )
     try:
-        mode = DiagnosisMode(req.mode.lower().strip())
-    except Exception:
-        mode = DiagnosisMode.FAST
-
-    try:
-        # 把手动诊断请求入库, 生成 task_id, incident_id, incident_group_id
-        result = await incident_repository.create_manual_task(
-            source=f"submit:{req.session_id}",
-            title=req.query[:80],
+        return await diagnosis_submission_service.submit(
             query=req.query,
-            severity=req.severity or "warning",
-            service=req.service or "",
-            diagnosis_mode=mode,
-            context={"session_id": req.session_id, "entry": "diagnose_submit"},
+            mode=req.mode,
+            session_id=req.session_id,
+            severity=req.severity,
+            service=req.service,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"创建任务失败: {exc}")
-
-    enqueued = ""
-    if settings.incident_pipeline_enabled and result.task_created:
-        try:
-            enqueued = await incident_queue.enqueue_task(
-                task_id=result.task_id,
-                incident_group_id=result.incident_group_id,
-                incident_id=result.incident_id,
-                diagnosis_mode=mode.value,
-                priority=100,
-                level=level_for_severity(req.severity),  # 手动默认 warning→normal
-                payload={
-                    "query": req.query,
-                    "alertname": req.query[:80],
-                    "severity": req.severity,
-                    "service": req.service,
-                    "source": f"submit:{req.session_id}",
-                },
-            )
-            await incident_repository.set_task_queue_message(result.task_id, enqueued)
-        except Exception:
-            enqueued = ""
-
-    position = await incident_repository.queue_position(result.task_id)
-    return {
-        "task_id": result.task_id,
-        "incident_group_id": result.incident_group_id,
-        "status": "queued" if result.task_created else "running",
-        "task_created": result.task_created,
-        "queue_position": position,
-        "enqueued": bool(enqueued),
-        "message": (
-            f"诊断任务已提交，正在排队（前方还有 {position - 1} 个）"
-            if position and position > 1
-            else "诊断任务已提交，即将开始"
-        )
-        if result.task_created
-        else "已有相同诊断在进行中，已复用",
-    }
 
 
 @router.post(
@@ -133,8 +84,8 @@ async def submit_diagnose(req: DiagnoseSubmitRequest, request: Request) -> dict[
 )
 async def aiops_diagnose(req: DiagnosisRequest, request: Request) -> EventSourceResponse:
     # 限流 (改造文档第 8 步): 同步诊断和 submit 共用单 IP/分钟 上限
-    await rate_limiter.enforce(
-        "manual", rate_limiter.client_ip(request),
+    await rate_limit.enforce(
+        "manual", rate_limit.client_ip(request),
         settings.rate_limit_manual_per_ip_per_min, 60,
     )
     logger.info(

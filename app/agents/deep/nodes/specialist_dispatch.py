@@ -13,7 +13,7 @@ from loguru import logger
 
 from app.agents.deep.specialists import SPECIALIST_SPECS, get_spec, run_specialist
 from app.agents.deep.state import DeepDiagnosisState
-from app.incidents.models import EvidenceSource
+from app.evidence.models import EvidenceSource
 from app.harness.runtime.transitions import DEEP_AGENT_DONE, make_transition
 
 

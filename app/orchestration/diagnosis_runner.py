@@ -2,25 +2,26 @@
 
 API 与 Worker 调用方的统一入口: fast / deep 图都从这里 astream, 输出结构化运行时事件。
 本模块不知道 SSE、HTTP、Redis 队列消费或 Postgres 审计 —— 那些是 services 层 / Worker
-层的事。诊断收尾时把报告 ingest 进 LLM Wiki 是唯一的副作用 (best-effort)。
+层的事。跨用例报告缓存由调用方通过 Hook 注入；诊断收尾时仍会把报告 ingest 进
+LLM Wiki，两个副作用都按 best-effort 执行。
 """
 
 from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 from loguru import logger
 
 from app.harness.runtime.stream_sink import set_sink
-from app.incidents.models import DiagnosisMode
-from app.harness.wiki.store import ingest_diagnosis
 from app.harness.runtime.agent_harness import HarnessUsageStats, get_agent_harness
-# chat_memory 在 _cache_report 内 lazy import,避免 services -> orchestration -> services 循环。
+from app.harness.wiki.store import ingest_diagnosis
+from app.incidents.models import DiagnosisMode
 
 RuntimeEvent = dict[str, Any]
+ReportHook = Callable[[str, RuntimeEvent], Awaitable[None]]
 
 _graph_plain = None
 _deep_graph_plain = None
@@ -102,22 +103,27 @@ async def run_diagnosis_graph(
     *,
     session_id: str = "default",
     diagnosis_mode: str | DiagnosisMode = DiagnosisMode.FAST,
-    cache_reports: bool = False,
     alert_signature: str = "",
+    task_id: str = "",
+    incident_group_id: str = "",
+    incident_id: str = "",
+    report_hook: ReportHook | None = None,
 ) -> AsyncIterator[RuntimeEvent]:
     """跑 fast 或 deep LangGraph 诊断图, 产 SSE 事件流。
 
     Args:
         query: Alert text or user-described incident.
-        session_id: Correlation id for logs and optional report cache.
+        session_id: Correlation id for logs and optional report hook.
         diagnosis_mode: Requested mode (fast / deep). Deep routes to the deep
             graph when settings.deep_diagnosis_enabled, else falls back to fast.
-        cache_reports: When true, final reports are copied to short-term chat
-            memory for follow-up RAG questions. Workers should keep this false.
         alert_signature: Same-incident fingerprint computed by the caller from
             the structured alert payload. Threaded into the graph state so the
             LLM Wiki recall_block can do direct-page lookup
             (services/<service>.md, patterns/<sig>.md). Manual/SSE callers leave it empty.
+        task_id: Optional persisted diagnosis task id used by the deep context loader.
+        incident_group_id: Optional persisted incident-group id for deep diagnosis.
+        incident_id: Optional persisted incident id for deep diagnosis.
+        report_hook: Optional caller-owned best-effort callback for each report event.
     """
     requested_mode, effective_mode, group_agent_reserved = resolve_effective_mode(
         diagnosis_mode
@@ -158,8 +164,6 @@ async def run_diagnosis_graph(
     )
 
     # 按 effective_mode 选 graph: deep 启用时走独立深度图, 否则走 fast。
-    # 两套 graph 的 input shape 兼容 (都接受 input/diagnosis_mode/requested_diagnosis_mode/
-    # alert_signature 这几个字段), 故 graph_input 共用同一份。
     if effective_mode == DiagnosisMode.DEEP:
         graph = await get_deep_diagnosis_graph()
     else:
@@ -175,6 +179,18 @@ async def run_diagnosis_graph(
         "requested_diagnosis_mode": requested_mode.value,
         "alert_signature": alert_signature,
     }
+    if effective_mode == DiagnosisMode.DEEP:
+        from app.orchestration.deep_context import build_deep_context
+
+        graph_input.update(
+            await build_deep_context(
+                query=query,
+                task_id=task_id,
+                incident_group_id=incident_group_id,
+                incident_id=incident_id,
+                alert_signature=alert_signature,
+            )
+        )
     final_report = ""  # 经验 Wiki 写钩子用: 捕获本次诊断产出的最终报告文本
 
     async def _graph_runner() -> None:
@@ -224,8 +240,11 @@ async def run_diagnosis_graph(
                             report_text = (runtime_event.get("data") or {}).get("report") or ""
                             if report_text:
                                 final_report = report_text
-                            if cache_reports:
-                                await _cache_report(session_id, runtime_event)
+                            await _run_report_hook(
+                                report_hook,
+                                session_id=session_id,
+                                event=runtime_event,
+                            )
                         yield runtime_event
                 continue
 
@@ -301,19 +320,20 @@ async def run_diagnosis_graph(
                 pass
 
 
-async def _cache_report(session_id: str, event: RuntimeEvent) -> None:
-    report_text = (event.get("data") or {}).get("report") or ""
-    if not report_text:
+async def _run_report_hook(
+    report_hook: ReportHook | None,
+    *,
+    session_id: str,
+    event: RuntimeEvent,
+) -> None:
+    """执行调用方注入的报告副作用，失败时只记录日志。"""
+    if report_hook is None:
         return
     try:
-        # lazy import: services -> orchestration 是主方向, 这里反向用 services.chat_memory
-        # (短期记忆原语), 用 lazy import 让模块加载顺序不再形成循环。
-        from app.services import chat_memory
-
-        await chat_memory.append_diagnosis_report(report_text, session_id=session_id)
+        await report_hook(session_id, event)
     except Exception as exc:
         logger.warning(
-            f"[DiagnosisRunner] 诊断报告缓存失败 session={session_id}: "
+            f"[DiagnosisRunner] report hook 失败 session={session_id}: "
             f"{type(exc).__name__}: {exc}"
         )
 

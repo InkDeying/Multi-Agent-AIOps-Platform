@@ -42,7 +42,7 @@ from app.harness.prompts.deep import (
     METRIC_SYSTEM_PROMPT,
     RUNBOOK_SYSTEM_PROMPT,
 )
-from app.incidents.models import EvidenceSource
+from app.evidence.models import EvidenceSource
 
 LOG_SPEC = SpecialistSpec(
     name="log_agent",

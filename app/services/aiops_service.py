@@ -15,9 +15,17 @@ from typing import Any
 from loguru import logger
 
 from app.config import settings
-from app.queue.distributed_limiter import DistributedLimitBusy, distributed_slot
-from app.orchestration.diagnosis_runner import make_event, run_diagnosis_graph
+from app.db.rag_chat_memory import append_diagnosis_report
 from app.incidents.models import DiagnosisMode
+from app.orchestration.diagnosis_runner import make_event, run_diagnosis_graph
+from app.queue.distributed_limiter import DistributedLimitBusy, distributed_slot
+
+
+async def _cache_report(session_id: str, event: dict[str, Any]) -> None:
+    """把诊断报告写入短期会话缓存，供后续 RAG 问答使用。"""
+    report_text = str((event.get("data") or {}).get("report") or "")
+    if report_text:
+        await append_diagnosis_report(report_text, session_id=session_id)
 
 
 async def stream_diagnose(
@@ -45,7 +53,7 @@ async def stream_diagnose(
                     query,
                     session_id=session_id,
                     diagnosis_mode=diagnosis_mode,
-                    cache_reports=True,
+                    report_hook=_cache_report,
                 ):
                     yield event
             except asyncio.CancelledError:

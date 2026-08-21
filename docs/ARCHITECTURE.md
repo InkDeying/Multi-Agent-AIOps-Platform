@@ -103,7 +103,7 @@ Skill 的 `allowed_tools` 不是对所有查询工具的绝对白名单：
 - PermissionMode 与 Guardrail 会继续给候选工具生成 `allow / ask / deny` 决策。
 - 高风险工具默认阻断；`ask_destructive` 模式可以进入人工审批。
 
-`app/harness/tools/loader.py` 只加载本地和 MCP 基础工具；`app/harness/tools/catalog.py` 再合并
+`app/harness/tools/loader.py` 只加载本地和 MCP 基础工具；`app/agents/tool_catalog.py` 再合并
 `app/agents/delegates/` 提供的 `delegate_to_*` 工具，避免基础工具加载器反向依赖 Agent。
 
 ## 4. deep 诊断图
@@ -121,8 +121,10 @@ IncidentManager
 
 ### 上下文和派遣
 
-- IncidentManager 读取任务、事件组和告警元信息；手动 SSE 没有任务事实时会安全降级。
-- CorrelationContext 聚合同组告警和 LLM Wiki 历史经验。
+- `app/orchestration/deep_context.py` 在图启动前读取任务、事件组和 LLM Wiki 上下文，
+  并把成功、未找到或读取异常状态显式注入 Deep state。
+- IncidentManager 只规范化已注入的任务事实；手动 SSE 没有任务事实时会安全降级。
+- CorrelationContext 只把已注入的同组告警和 Wiki 历史经验转换为 Evidence，不执行 IO。
 - EvidencePlan 使用确定性关键词规则决定派遣哪些专业 Agent。图结构固定为四路 fan-out，
   未被派遣的节点通过 Guard 跳过，不调用 LLM。
 
@@ -171,9 +173,16 @@ RAG Chat 的 query 改写和历史摘要压缩位于 `app/harness/rag/memory.py`
 LLM 驱动的文本变换；Redis 会话读取、压缩阈值、消息裁剪和摘要写回位于
 `app/services/rag/memory.py`，避免 Harness 反向依赖 Services。
 
-Milvus 的连接生命周期、健康检查、Collection 管理和底层客户端桥接位于
-`app/db/milvus.py`；LangChain VectorStore、Hybrid Search、Rerank 和 Parent-Child
-检索编排位于 `app/harness/rag/`。
+Milvus 的连接生命周期、健康检查、Collection 管理和底层查询/删除原语位于
+`app/db/milvus.py`；`app/harness/rag/document_index.py` 负责文档索引能力，
+LangChain VectorStore、Hybrid Search、Rerank 和 Parent-Child 检索编排也位于
+`app/harness/rag/`。Service 不直接依赖 Milvus SDK。
+
+RAG Chat 会话消息和跨 session 的 AIOps 诊断报告缓存统一位于
+`app/db/rag_chat_memory.py`，使用不同 key 域但复用同一个 Redis 客户端。Agent 可见的完整工具目录由
+`app/agents/tool_catalog.py` 装配，`app/harness/tools/` 只提供基础工具和工具元数据。
+同步诊断是否写入短期报告缓存由 `app/services/aiops_service.py` 通过 Report Hook 注入；
+Worker 不传该 Hook，`diagnosis_runner` 不再直接写 RAG Chat 存储。
 
 默认公开语料包括 954 条 Prometheus 告警文档、通用/Redis/MySQL SOP 和评测 Runbook。
 `scripts/convert_log_templates.py` 可以从用户提供的 loghub-2.0 数据额外生成日志模板，但这些模板
@@ -248,3 +257,39 @@ API 和 Worker 使用同一个 Python 镜像，通过 Compose Command 区分角�
 - `requirements.txt` 使用范围依赖而非完整锁文件，部署复现性受上游发布影响。
 
 这些限制应在具体需求出现时按风险逐项处理，不能通过一次大规模“整理”静默改写。
+
+## 10. 分层规则
+
+项目采用单向依赖。下层不能导入上层，跨层副作用必须通过明确的适配器或接口完成。
+
+```text
+API
+  -> Services
+  -> Orchestration
+  -> Agents
+  -> Harness
+  -> DB / Queue / Provider
+```
+
+具体约束如下：
+
+- `app/api/` 只处理 HTTP、鉴权、参数校验、SSE/JSON 转换和异常映射；业务写入由
+  `app/services/` 完成。健康检查可以直接读取基础设施适配器。
+- `app/services/` 负责用户用例和业务流程，不直接依赖 FastAPI 类型或底层 Provider SDK。
+- `app/orchestration/` 负责 Graph 选择、Deep 上下文加载、运行、事件转换和运行后 Hook；
+  不得反向导入 `app.services`，也不得直接写入其它用例拥有的存储。
+- `app/agents/` 负责 Graph、State、Node 和 Agent 行为；节点不得直接读写 Redis、
+  Postgres、Milvus 或文件系统。需要的事实与经验必须由编排层预加载后注入 State。
+- `app/harness/core/`、`app/harness/runtime/`、`app/harness/tools/` 和
+  `app/harness/rag/` 只提供能力、策略和 Provider 适配；不得依赖 API、Services 或
+  Agents。最终的 Agent 工具目录由 `app/agents/tool_catalog.py` 装配。
+- `app/db/` 只负责 Postgres、Redis、Milvus、审批、AgentRun/ToolCall 事实和短期报告缓存等存储适配；
+  不得导入上层模块。
+- `app/queue/` 只负责 Redis Streams、分布式槽位和 Redis 计数；HTTP 429 和 Request
+  解析属于 `app/api/`。
+- `app/common/` 只允许放跨层复用的纯函数，不读取 settings，不进行 IO，不包含业务
+  领域语义。领域工具必须留在其所属模块。
+- `app/main.py` 和 `app/diagnosis_worker.py` 是组合根，可以装配并启动基础设施；
+  其它业务模块不得自行创建跨域全局组件。
+
+兼容性门面可以暂时保留旧导入路径，但必须标记为迁移过渡，不能继续承载业务逻辑。

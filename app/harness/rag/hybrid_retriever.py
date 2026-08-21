@@ -193,17 +193,9 @@ def _load_all_chunks_from_milvus() -> List[Document]:
     这里为 demo 简化, 生产环境建议维护独立元数据表.
     """
     try:
-        from pymilvus import Collection
+        from app.db.milvus import query_collection
 
-        from app.db.milvus import connect_orm_alias
-
-        client, alias = connect_orm_alias()
-        if not client.has_collection(settings.milvus_collection):
-            return []
-
-        col = Collection(settings.milvus_collection, using=alias)
-        col.load()
-        rows = col.query(
+        rows = query_collection(
             expr="pk >= 0",
             output_fields=[
                 "content",
@@ -214,6 +206,7 @@ def _load_all_chunks_from_milvus() -> List[Document]:
                 "chunk_index",
             ],
             limit=16384,
+            name=settings.milvus_collection,
         )
     except Exception as e:
         logger.warning(f"[hybrid] 从 Milvus 拉全量失败 (降级): {type(e).__name__}: {e}")

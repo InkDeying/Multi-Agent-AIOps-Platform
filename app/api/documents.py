@@ -11,7 +11,12 @@ from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile,
 
 from app.config import settings
 from app.schemas.common import ApiResponse
-from app.schemas.document import DeleteResponse, DocumentListResponse, UploadResponse
+from app.schemas.document import (
+    DeleteResponse,
+    DocumentInfo,
+    DocumentListResponse,
+    UploadResponse,
+)
 import app.services.document_service as document_service
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -45,8 +50,18 @@ def require_kb_admin_token(
     dependencies=[Depends(require_kb_admin_token)],
 )
 async def upload(file: UploadFile = File(..., description="待索引的文件")) -> ApiResponse[UploadResponse]:
-    result = await document_service.upload_document(file)
-    return ApiResponse.success(data=result, message=f"已索引 {result.chunks_indexed} 块")
+    # HTTP 侧的文件读取留在 API 层, 服务层只拿文件名 + 原始字节
+    filename = file.filename or "unknown"
+    raw = await file.read()
+    chunks_indexed, bytes_count = await document_service.upload_document(filename, raw)
+    return ApiResponse.success(
+        data=UploadResponse(
+            source=filename,
+            chunks_indexed=chunks_indexed,
+            bytes=bytes_count,
+        ),
+        message=f"已索引 {chunks_indexed} 块",
+    )
 
 
 @router.get(
@@ -55,9 +70,12 @@ async def upload(file: UploadFile = File(..., description="待索引的文件"))
     summary="文档列表",
 )
 async def list_documents() -> ApiResponse[DocumentListResponse]:
-    docs = document_service.list_documents()
+    documents = [
+        DocumentInfo(source=str(d["source"]), chunk_count=int(d["chunk_count"]))
+        for d in document_service.list_documents()
+    ]
     return ApiResponse.success(
-        data=DocumentListResponse(total=len(docs), documents=docs)
+        data=DocumentListResponse(total=len(documents), documents=documents)
     )
 
 

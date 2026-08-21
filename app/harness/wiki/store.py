@@ -25,6 +25,14 @@ from pathlib import Path
 from loguru import logger
 
 from app.config import settings
+from app.db.wiki_storage import (
+    WIKI_DIR,
+    WIKI_INDEX_FILE,
+    WIKI_LOCK_FILE,
+    WIKI_LOG_FILE,
+    WIKI_PATTERNS_DIR,
+    WIKI_SERVICES_DIR,
+)
 from app.harness.core.llm import get_chat_llm
 from app.harness.core.llm_parse import extract_json
 from app.harness.wiki.file_lock import wiki_write_guard
@@ -35,14 +43,6 @@ from app.harness.wiki.text_utils import (
     slug,
     tokenize,
 )
-
-# data/wiki/ 在仓库根下 (app/harness/wiki/store.py -> parents[3] = repo root)
-_WIKI_DIR = Path(__file__).resolve().parents[3] / "data" / "wiki"
-_SERVICES = _WIKI_DIR / "services"
-_PATTERNS = _WIKI_DIR / "patterns"
-_INDEX = _WIKI_DIR / "index.md"
-_LOG = _WIKI_DIR / "log.md"
-_LOCK_FILE = _WIKI_DIR / ".write.lock"
 
 
 def _now() -> str:
@@ -73,16 +73,16 @@ def _update_index(page_ref: str, summary: str) -> None:
     """把一行 `- [[page_ref]] — summary` 并入 index.md (同 ref 去重更新)。"""
     summary = " ".join(str(summary or "").split())[:100] or page_ref
     line = f"- [[{page_ref}]] — {summary}"
-    body = [ln for ln in _read(_INDEX).splitlines() if ln.startswith("- [[")]
+    body = [ln for ln in _read(WIKI_INDEX_FILE).splitlines() if ln.startswith("- [[")]
     body = [ln for ln in body if f"[[{page_ref}]]" not in ln]
     body.append(line)
-    _write(_INDEX, "# Wiki 目录\n\n" + "\n".join(sorted(body)))
+    _write(WIKI_INDEX_FILE, "# Wiki 目录\n\n" + "\n".join(sorted(body)))
 
 
 def _append_log(entry: str) -> None:
     """append-only 流水, 每行 `## [date] entry` (原版 log.md 约定, 可被 unix 工具解析)。"""
     line = f"## [{_now()}] {' '.join(str(entry or '').split())}"
-    _write(_LOG, (_read(_LOG).rstrip("\n") + "\n" + line) if _read(_LOG) else line)
+    _write(WIKI_LOG_FILE, (_read(WIKI_LOG_FILE).rstrip("\n") + "\n" + line) if _read(WIKI_LOG_FILE) else line)
 
 
 # ==================== 写: ingest 一次诊断 ====================
@@ -112,10 +112,10 @@ async def ingest_diagnosis(
     if not settings.wiki_enabled:
         return False
     try:
-        async with wiki_write_guard(_WIKI_DIR, _LOCK_FILE):
+        async with wiki_write_guard(WIKI_DIR, WIKI_LOCK_FILE):
             service, pat = parse_target(signature, query)
-            svc_path = (_SERVICES / f"{slug(service)}.md") if service else None
-            pat_path = _PATTERNS / f"{pat}.md"
+            svc_path = (WIKI_SERVICES_DIR / f"{slug(service)}.md") if service else None
+            pat_path = WIKI_PATTERNS_DIR / f"{pat}.md"
             existing_svc = _read(svc_path) if svc_path else ""
             existing_pat = _read(pat_path)
 
@@ -178,10 +178,10 @@ async def recall_block(*, query: str = "", signature: str = "", limit_chars: int
 
         # ① 直达: service 页 + pattern 页
         if service:
-            sp = _SERVICES / f"{slug(service)}.md"
+            sp = WIKI_SERVICES_DIR / f"{slug(service)}.md"
             if sp.exists():
                 pages.append(sp)
-        pp = _PATTERNS / f"{pat}.md"
+        pp = WIKI_PATTERNS_DIR / f"{pat}.md"
         if pp.exists():
             pages.append(pp)
 
@@ -189,7 +189,7 @@ async def recall_block(*, query: str = "", signature: str = "", limit_chars: int
         if not pages:
             qt = tokenize(query)
             scored: list[tuple[int, str]] = []
-            for ln in _read(_INDEX).splitlines():
+            for ln in _read(WIKI_INDEX_FILE).splitlines():
                 m = WIKILINK_RE.search(ln)
                 if not m:
                     continue
@@ -198,7 +198,7 @@ async def recall_block(*, query: str = "", signature: str = "", limit_chars: int
                     scored.append((score, m.group(1)))
             scored.sort(key=lambda x: x[0], reverse=True)
             for _, ref in scored[:2]:
-                p = _WIKI_DIR / f"{ref}.md"
+                p = WIKI_DIR / f"{ref}.md"
                 if p.exists():
                     pages.append(p)
 
@@ -211,7 +211,7 @@ async def recall_block(*, query: str = "", signature: str = "", limit_chars: int
             seen.add(key)
             txt = _read(p).strip()
             if txt:
-                blocks.append(f"### {p.relative_to(_WIKI_DIR)}\n{txt}")
+                blocks.append(f"### {p.relative_to(WIKI_DIR)}\n{txt}")
         out = "\n\n".join(blocks)[:max_chars].strip()
         if out:
             logger.info(f"[wiki] 召回 {len(blocks)} 页注入诊断 (read-index-first)")
@@ -229,12 +229,12 @@ def lint() -> dict[str, list[str]]:
     LLM 版的"矛盾/过期"检查留作 scripts/wiki_lint.py 的可选增强。
     """
     findings: dict[str, list[str]] = {"orphan": [], "not_in_index": [], "empty": []}
-    if not _WIKI_DIR.exists():
+    if not WIKI_DIR.exists():
         return findings
-    index_text = _read(_INDEX)
+    index_text = _read(WIKI_INDEX_FILE)
     all_links = set(WIKILINK_RE.findall(index_text))
     for sub in ("services", "patterns"):
-        d = _WIKI_DIR / sub
+        d = WIKI_DIR / sub
         if not d.exists():
             continue
         for p in d.glob("*.md"):

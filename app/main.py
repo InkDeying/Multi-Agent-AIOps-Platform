@@ -29,6 +29,8 @@ from app.middleware import setup_middlewares
 from app.api import aiops, approvals, chat, documents, eval as eval_api
 from app.api import health, incidents, queue, skills, webhook, wiki
 from app.config import settings
+from app.common.approval_port import set_approval_port
+from app.db.approvals import approval_repository
 from app.harness.mcp.client import mcp_client_manager
 from app.db.milvus import milvus_manager
 from app.db.postgres import close_postgres, connect_postgres, init_incident_schema
@@ -48,6 +50,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield 之前: 启动时执行 (连数据库、初始化资源)
     yield 之后: 关闭时执行 (清理资源)
     """
+    set_approval_port(approval_repository)
     # ==================== 启动 ====================
     logger.info("=" * 60)
     logger.info(f"启动 {settings.app_name} v{settings.app_version}")

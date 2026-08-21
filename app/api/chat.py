@@ -14,8 +14,8 @@ from loguru import logger
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
-import app.services.chat_memory as chat_memory
 import app.services.rag_service as rag_service
+from app.services import chat_session_service
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -104,13 +104,7 @@ async def chat_stream(req: ChatRequest) -> EventSourceResponse:
     description="返回 Redis 中保存的会话摘要与最近消息。Redis 未启用或不可用时返回空历史。",
 )
 async def get_chat_history(session_id: str) -> dict:
-    session = await chat_memory.load_session(session_id)
-    return {
-        "session_id": session_id,
-        "memory_enabled": await chat_memory.is_available(),
-        "summary": session.get("summary") or "",
-        "messages": session.get("messages") or [],
-    }
+    return await chat_session_service.get_history(session_id)
 
 
 @router.delete(
@@ -119,5 +113,4 @@ async def get_chat_history(session_id: str) -> dict:
     description="删除指定 session_id 的 Redis 会话摘要与消息历史。",
 )
 async def clear_chat_session(session_id: str) -> dict:
-    cleared = await chat_memory.clear_session(session_id)
-    return {"session_id": session_id, "cleared": cleared}
+    return await chat_session_service.clear_session(session_id)

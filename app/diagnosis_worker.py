@@ -17,11 +17,13 @@ from typing import Any
 
 from loguru import logger
 
+from app.common.approval_port import set_approval_port
 from app.orchestration.audit import run_legacy_langgraph_with_audit
 from app.config import settings
 from app.queue.distributed_limiter import distributed_slot
 from app.harness.mcp.client import mcp_client_manager
 from app.db.postgres import close_postgres, connect_postgres, init_incident_schema
+from app.db.approvals import approval_repository
 from app.incidents.repository import incident_repository
 from app.queue.redis_streams import incident_queue
 
@@ -44,6 +46,7 @@ class DiagnosisWorker:
         self._heartbeat_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
+        set_approval_port(approval_repository)
         await connect_postgres()
         await init_incident_schema()
         await incident_queue.connect()

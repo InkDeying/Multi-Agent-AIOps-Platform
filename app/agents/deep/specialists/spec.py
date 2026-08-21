@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List
 
-from app.incidents.models import EvidenceSource
+from app.evidence.models import EvidenceSource
 
 
 @dataclass(frozen=True)

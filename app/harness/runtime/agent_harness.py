@@ -76,12 +76,6 @@ class AgentHarness:
     def report_decision_model(self) -> str:
         return settings.agent_planner_model or settings.dashscope_router_model
 
-    def rag_rewrite_model(self) -> str:
-        return settings.dashscope_router_model
-
-    def rag_compact_model(self) -> str:
-        return settings.dashscope_chat_model
-
     def rag_chat_model(self) -> str:
         return settings.dashscope_chat_model
 
@@ -320,32 +314,6 @@ class AgentHarness:
             context=context,
             web_context=web_context,
             question=question,
-        )
-
-    def build_rag_rewrite_prompt(
-        self,
-        *,
-        summary: str,
-        history: str,
-        question: str,
-    ) -> str:
-        return rag_prompts.RAG_REWRITE_TEMPLATE.format(
-            summary=summary,
-            history=history,
-            question=question,
-        )
-
-    def build_rag_compact_prompt(
-        self,
-        *,
-        max_chars: int,
-        old_summary: str,
-        old_messages: str,
-    ) -> str:
-        return rag_prompts.RAG_COMPACT_TEMPLATE.format(
-            max_chars=max_chars,
-            old_summary=old_summary,
-            old_messages=old_messages,
         )
 
     # ==================== 降级 ====================

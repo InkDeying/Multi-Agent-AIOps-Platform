@@ -6,7 +6,7 @@
     遇到写工具自动切批走串行, 顺序仍然受保护.
   - 通过 settings.executor_parallel_enabled=False 可回退到 langchain.agents.create_agent
     (默认串行) 用于排错对比.
-  - 工具来自 tools.catalog.get_all_tools(), 经 Harness (filter_tools_for_skill) 过滤.
+  - 工具来自 app.agents.tool_catalog.get_all_tools(), 经 Harness (filter_tools_for_skill) 过滤.
   - 每次执行后, 把 (step, result) 追加到 past_steps.
 """
 
@@ -33,7 +33,7 @@ from app.harness.runtime.transitions import (
 from app.agents.fast.state import PlanExecuteState
 from app.harness.runtime.stream_sink import emit as emit_stream, set_step
 from app.harness.core.llm import get_chat_llm
-from app.harness.tools.catalog import get_all_tools
+from app.agents.tool_catalog import get_all_tools
 
 # 缓存 (skill, tool_names, runner_mode, perm_mode) → (tools, decisions, executor)
 # - 并行模式下 executor 是 (llm, tools) 二元组, run_parallel_agent 是无状态函数

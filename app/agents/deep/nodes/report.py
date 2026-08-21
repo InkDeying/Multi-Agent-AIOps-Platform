@@ -4,7 +4,7 @@
 排版逻辑在 ``app/agents/deep/report_renderer.py``，本节点只做:
 读 state → 渲染 → 打日志 → 返回更新。
 
-``cache_reports`` 等副作用由 orchestration runner 控制，本节点不落库。
+报告缓存等副作用由调用方通过 orchestration runner 的 Hook 注入，本节点不落库。
 """
 
 from loguru import logger

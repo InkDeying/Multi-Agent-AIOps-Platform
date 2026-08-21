@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.harness.runtime.approvals import approval_repository
+from app.services import approval_service
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
@@ -20,26 +20,17 @@ class DecideRequest(BaseModel):
 
 @router.get("/pending", summary="待审批的请求 (前端 inbox)")
 async def list_pending(limit: int = 50) -> dict[str, Any]:
-    try:
-        items = await approval_repository.list_pending(limit=limit)
-    except Exception as exc:
-        # 数据库不可用时返回友好降级, 前端可以画"审批通道未就绪"
-        return {"count": 0, "items": [], "available": False, "error": str(exc)}
-    return {"count": len(items), "items": items, "available": True}
+    return await approval_service.list_pending(limit=limit)
 
 
 @router.get("/recent", summary="历史审批 (审计/复盘)")
 async def list_recent(limit: int = 50) -> dict[str, Any]:
-    try:
-        items = await approval_repository.list_recent(limit=limit)
-    except Exception as exc:
-        return {"count": 0, "items": [], "available": False, "error": str(exc)}
-    return {"count": len(items), "items": items, "available": True}
+    return await approval_service.list_recent(limit=limit)
 
 
 @router.get("/{req_id}", summary="单条审批详情")
 async def get_one(req_id: str) -> dict[str, Any]:
-    row = await approval_repository.get_request(req_id)
+    row = await approval_service.get_one(req_id)
     if row is None:
         raise HTTPException(status_code=404, detail="approval not found")
     return row
@@ -50,7 +41,7 @@ async def decide(req_id: str, body: DecideRequest) -> dict[str, Any]:
     if body.decision not in ("approved", "denied", "cancelled"):
         raise HTTPException(status_code=400, detail="decision 必须是 approved / denied / cancelled")
     try:
-        row = await approval_repository.decide(
+        row = await approval_service.decide(
             req_id,
             decision=body.decision,
             decided_by=body.decided_by,

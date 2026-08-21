@@ -20,11 +20,11 @@ from loguru import logger
 
 from app.harness.runtime.stream_sink import set_sink
 from app.config import settings
-from app.web_search import get_provider as get_web_search_provider
+from app.harness.websearch import get_provider as get_web_search_provider
 from app.harness.core.llm import get_chat_llm
 from app.harness.runtime.agent_harness import HarnessUsageStats, get_agent_harness
 from app.harness.runtime.tool_runner import run_parallel_agent
-import app.services.chat_memory as chat_memory
+import app.db.rag_chat_memory as rag_memory_store
 from app.harness.rag.memory import rewrite_question
 from app.harness.rag.retrieval import build_context
 from app.harness.core.llm_parse import content_to_text
@@ -123,7 +123,7 @@ async def stream_chat(
             "data": data or {},
         }
 
-    session = await chat_memory.load_session(session_id)
+    session = await rag_memory_store.load_session(session_id)
     summary = session.get("summary") or "(无)"
     recent_messages = session.get("recent_messages") or []
 
@@ -274,7 +274,7 @@ async def stream_chat(
     # 不依赖联网开关, 让 "刚才那个 vmmem 是什么" 这种指代追问也能找到答案.
     # 只取 1 份, 单份截断 1200 字 (报告头 TL;DR 已足够); 想看更早请去 AIOps 页面.
     try:
-        recent_reports = await chat_memory.get_recent_diagnosis_reports(limit=1)
+        recent_reports = await rag_memory_store.get_recent_diagnosis_reports(limit=1)
     except Exception as e:
         logger.warning(f"[rag] 读取最近诊断报告失败: {type(e).__name__}: {e}")
         recent_reports = []
@@ -465,13 +465,13 @@ async def stream_chat(
 
     # ---------- 收尾: 写 memory + 输出 stats ----------
     try:
-        await chat_memory.append_message(
+        await rag_memory_store.append_message(
             session_id,
             role="user",
             content=question,
             rewritten_query=rewritten_question,
         )
-        await chat_memory.append_message(
+        await rag_memory_store.append_message(
             session_id,
             role="assistant",
             content=full_answer,

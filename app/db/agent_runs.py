@@ -1,4 +1,4 @@
-"""AgentRun 与 ToolCall 仓储。
+"""AgentRun 与 ToolCall 的 Postgres 仓储。
 
 裸 SQL + asyncpg, 不上 ORM (参考 app/incidents/repository.py 风格)。
 为 orchestration/audit.py 在 Worker 路径里的审计落库提供原子操作。
@@ -146,4 +146,3 @@ class AgentRunRepository:
 
 
 agent_run_repository = AgentRunRepository()
-

@@ -1,7 +1,7 @@
 """基础工具加载器.
 
 负责把"本地 @tool 工具"和"MCP 远程工具"合并成基础工具列表。
-Agent 可见的完整工具目录由 :mod:`app.harness.tools.catalog` 统一装配。
+Agent 可见的完整工具目录由 :mod:`app.agents.tool_catalog` 统一装配。
 
 设计要点:
   - 本地工具是同步加载 (装饰器自动注册)

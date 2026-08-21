@@ -1,4 +1,6 @@
-"""审批请求仓储 + 等待决策 (ASK_DESTRUCTIVE 模式的人工确认通道).
+"""审批请求的 Postgres 仓储 + 等待决策.
+
+审批是持久化事实和人工决策通道，不属于 Harness Runtime 本身。
 
 工作流:
   1. tool_runner 命中 ask 后调 create_request → 写一行 pending 到 approval_requests

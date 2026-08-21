@@ -12,10 +12,10 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.orchestration.repository import agent_run_repository
+from app.db.agent_runs import agent_run_repository
 from app.evidence.models import EvidenceCreate
 from app.evidence.repository import evidence_repository
-from app.incidents.models import EvidenceSource
+from app.evidence.models import EvidenceSource
 from app.incidents.repository import incident_repository
 
 
@@ -129,8 +129,10 @@ async def run_legacy_langgraph_with_audit(task_id: str, item: dict[str, Any]) ->
             query,
             session_id=session_id,
             diagnosis_mode=diagnosis_mode,
-            cache_reports=False,
             alert_signature=alert_signature,
+            task_id=task_id,
+            incident_group_id=incident_group_id,
+            incident_id=incident_id,
         ):
             event_type = str(event.get("type") or "")
             data = _event_data(event)

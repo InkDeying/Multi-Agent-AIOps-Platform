@@ -3,11 +3,25 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.incidents.models import EvidenceSource
+
+
+class EvidenceSource(StrEnum):
+    """证据在诊断证据链中的来源分类。字符串值属于持久化协议。"""
+
+    ALERT = "alert"
+    LOG = "log"
+    METRIC = "metric"
+    TRACE = "trace"
+    RUNBOOK = "runbook"
+    INCIDENT_HISTORY = "incident_history"
+    RCA = "rca"
+    MCP_TOOL_RESULT = "mcp_tool_result"
+    HUMAN_FEEDBACK = "human_feedback"
 
 
 class EvidenceCreate(BaseModel):
@@ -25,4 +39,3 @@ class EvidenceCreate(BaseModel):
 class EvidenceRecord(EvidenceCreate):
     id: str
     created_at: datetime | None = None
-

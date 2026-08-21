@@ -118,22 +118,23 @@ python benchmark/run_benchmark.py ragas --limit 5
 | `docs/CONCURRENCY_TEST_GUIDE.md` | 可复现的队列、限流和并发检查 |
 | `docs/PRESSURE_TEST_REPORT.md` | 特定历史环境下的压测证据 |
 | `app/api/` | HTTP/SSE 入口和请求响应契约 |
+| `app/common/` | 跨层纯工具；不得包含业务、IO、settings 或上层依赖 |
 | `app/services/` | 诊断、RAG Chat 等用例服务 |
-| `app/orchestration/` | 诊断模式选择、执行、审计和事件转换 |
-| `app/agents/fast/` | fast 图、状态、Skill-Plan-Execute-Replan 节点、报告合成和 reroute 策略 |
+| `app/orchestration/` | 诊断模式选择、Deep 上下文加载、执行、审计、事件转换和调用方 Hook |
+| `app/agents/fast/` | fast 图、状态、Skill-Plan-Execute-Replan 节点、报告合成、reroute 策略和最终工具目录装配 |
 | `app/agents/deep/` | deep 图、状态、专业 Agent 规格/共享执行体、证据归并、RCA 和报告渲染 |
 | `app/agents/delegates/` | 可复用的 `delegate_to_*` Agent 定义和工具适配器 |
 | `app/harness/core/` | LLM 工厂、解析、结构化输出、Provider 适配和 Harness 通用能力 |
 | `app/harness/prompts/` | fast 诊断图和 RAG Chat 的 prompt 文本；运行时策略不放在这里 |
-| `app/harness/rag/` | RAG 能力，包括 query 改写、历史摘要压缩、Embedding、文档切分、向量/混合检索和按 Provider 拆分的 Rerank |
+| `app/harness/rag/` | RAG 能力，包括 query 改写、历史摘要压缩、文档索引、Embedding、切分、向量/混合检索和按 Provider 拆分的 Rerank |
 | `app/harness/mcp/` | MCP 客户端生命周期和 Lazy MCP 工具暴露 |
-| `app/harness/runtime/` | Agent Harness 门面、权限、审批、工具编排、预算、错误和 replan 策略 |
+| `app/harness/runtime/` | Agent Harness 门面、权限、工具编排、预算、错误和 replan 策略；持久化适配器不放这里 |
 | `app/harness/skills/` | Skill 模型、加载器、注册表、Playbook 和 Skill 文档 |
-| `app/harness/tools/` | 工具元数据、本地工具、基础工具加载和工具目录 |
+| `app/harness/tools/` | 工具元数据、本地工具和基础工具加载 |
 | `app/harness/wiki/` | 运行时 LLM Wiki 经验存储、召回、跨进程写锁和确定性文本工具 |
 | `app/incidents/` | 告警归一化/关联、事件入库、诊断任务持久化和任务级清理 |
-| `app/evidence/`、`app/db/` | 证据持久化、Postgres/Redis/Milvus 共享原语和 Schema |
-| `app/queue/` | Redis Streams、Worker 协调、分布式并发槽、接口限流和队列可观测性 |
+| `app/evidence/`、`app/db/` | 证据、审批、AgentRun/ToolCall、RAG Chat 记忆、Wiki 存储路径、Postgres/Redis/Milvus 共享原语和 Schema |
+| `app/queue/` | Redis Streams、Worker 协调、分布式并发槽、Redis 限流计数和队列可观测性 |
 | `mcp_servers/` | 外部 MCP 进程边界 |
 | `benchmark/` | 检索/RAG 评测数据集、运行器和生成报告 |
 | `data/kb_corpus/` | 版本化公开 RAG 语料，不是运维文档 |
@@ -151,6 +152,8 @@ python benchmark/run_benchmark.py ragas --limit 5
 - `fast` 使用 Skill Router -> Planner -> Executor -> Replanner -> Report。
 - `deep` 使用事件上下文 -> 证据计划 -> 隔离专业 Agent 扇出 -> 证据归并 -> RCA ->
   处置建议 -> 报告。
+- 编排层在 deep 图启动前加载持久化任务/事件组事实和 Wiki 上下文；Agent 节点只消费
+  注入状态，不直接查询存储。
 - 专业 Agent 只返回压缩后的 Evidence，私有 LLM 中间对话不能写入共享图状态。
 - Postgres 是 alerts、groups、tasks、agent runs、tool calls、evidence、approvals 和 reports
   的事实权威。Redis 负责临时队列和协调状态，不是持久事实库。
@@ -161,13 +164,15 @@ python benchmark/run_benchmark.py ragas --limit 5
 - 可重试副作用必须具备幂等性，或明确的不确定结果恢复路径。队列 ACK、重试、Pending
   回收和 DLQ 必须保持可区分。
 - Provider 专属行为不能塞进 API 路由；入口、用例、编排、运行时和 Provider 边界应保持分离。
+- 短期报告缓存等跨用例副作用由所属 Service 通过显式 Runner Hook 注入；编排层不直接写入
+  这些存储。
 
 ## 6. 敏感区域
 
 以下区域的修改需要聚焦证据，通常还需单独确认：
 
 - `.env.example` 与 `app/config.py`：Provider 选择、凭证、公共端点、并发和安全默认值。
-- `app/harness/runtime/permissions.py`、`tool_filter.py`、`tool_runner.py` 和 `approvals.py`：
+- `app/harness/runtime/permissions.py`、`tool_filter.py`、`tool_runner.py` 和 `app/db/approvals.py`：
   对外安全与副作用边界。
 - `mcp_servers/docker_server.py`：包含重启操作，不能把所有 Docker 工具视为只读。
 - `app/db/postgres.py`：Schema 与持久化兼容性。

@@ -28,6 +28,8 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_core.tools import BaseTool
 from loguru import logger
 
+from app.common.approval_port import get_approval_port
+from app.common.slot_context import current_slot
 from app.harness.core.llm_parse import content_to_text
 from app.harness.runtime.stream_sink import emit as emit_stream
 from app.harness.tools.meta import get_meta
@@ -358,10 +360,12 @@ async def run_parallel_agent(
                 handled = False
                 if _settings.approvals_enabled:
                     try:
-                        from app.harness.runtime.approvals import approval_repository
+                        approval_port = get_approval_port()
+                        if approval_port is None:
+                            raise RuntimeError("审批端口尚未注册")
 
                         impact = _impact_summary_for(name, tc.get("args") or {})
-                        req_id = await approval_repository.create_request(
+                        req_id = await approval_port.create_request(
                             tool_name=name,
                             tool_args=tc.get("args") or {},
                             reason=d.reason,
@@ -381,13 +385,12 @@ async def run_parallel_agent(
                         )
                         # 等人工审批可能很久, 期间先把分布式并发槽让出去, 避免空占名额
                         # 造成队头阻塞 (改造文档第 1 步与审批闭环的协调). 审批结束再抢回。
-                        from app.queue.distributed_limiter import current_slot
                         _slot = current_slot.get(None)
                         if _slot is not None:
                             with contextlib.suppress(Exception):
                                 await _slot.pause()
                         try:
-                            status = await approval_repository.wait_for_decision(req_id)
+                            status = await approval_port.wait_for_decision(req_id)
                         finally:
                             if _slot is not None:
                                 with contextlib.suppress(Exception):

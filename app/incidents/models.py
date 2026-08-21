@@ -35,24 +35,14 @@ class DiagnosisTaskStatus(StrEnum):
 
 
 class AgentRunStatus(StrEnum):
+    """AgentRun 的生命周期状态契约，供后续审计模型复用。"""
+
     PENDING = "pending"
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     TIMEOUT = "timeout"
     CANCELLED = "cancelled"
-
-
-class EvidenceSource(StrEnum):
-    ALERT = "alert"
-    LOG = "log"
-    METRIC = "metric"
-    TRACE = "trace"
-    RUNBOOK = "runbook"
-    INCIDENT_HISTORY = "incident_history"
-    RCA = "rca"
-    MCP_TOOL_RESULT = "mcp_tool_result"
-    HUMAN_FEEDBACK = "human_feedback"
 
 
 class NormalizedAlert(BaseModel):
@@ -103,30 +93,3 @@ class DiagnosisTaskRecord(BaseModel):
     updated_at: datetime | None = None
     claimed_at: datetime | None = None
     finished_at: datetime | None = None
-
-
-class AgentDefinition(BaseModel):
-    """Industrial Agent contract: more than a prompt."""
-
-    name: str
-    version: str = "v1"
-    role: str
-    allowed_tools: list[str] = Field(default_factory=list)
-    read_only: bool = True
-    timeout_sec: int = 60
-    max_retries: int = 1
-    max_tokens: int = 4000
-    max_evidence: int = 20
-    concurrency_group: str = "llm"
-
-
-class AgentEvent(BaseModel):
-    """Structured event emitted by Agent Runtime and Workers."""
-
-    type: str
-    task_id: str = ""
-    incident_group_id: str = ""
-    agent_name: str = ""
-    message: str = ""
-    data: dict[str, Any] = Field(default_factory=dict)
-

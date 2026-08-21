@@ -10,7 +10,7 @@ from typing import Any
 from loguru import logger
 
 from app.agents.deep.state import DeepDiagnosisState
-from app.incidents.models import EvidenceSource
+from app.evidence.models import EvidenceSource
 from app.harness.prompts.deep import RCA_SYSTEM_PROMPT as _RCA_SYSTEM_PROMPT
 from app.harness.runtime.transitions import DEEP_RCA_JUDGED, make_transition
 

@@ -2,6 +2,9 @@
 
 本模块只负责 LLM 驱动的文本变换, 不读取或写入 Redis, 也不感知 session_id。
 会话阈值、消息裁剪和持久化由 ``app.services.rag.memory`` 负责。
+
+prompt 模板来自 ``harness/prompts/rag.py``, 模型档位直接读 settings ——
+RAG 能力包不经过 runtime 门面, 避免能力子包反向依赖 runtime。
 """
 
 from __future__ import annotations
@@ -11,9 +14,10 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 from loguru import logger
 
+from app.config import settings
 from app.harness.core.llm import get_chat_llm
 from app.harness.core.llm_parse import content_to_text
-from app.harness.runtime.agent_harness import get_agent_harness
+from app.harness.prompts import rag as rag_prompts
 
 
 def format_history(messages: list[dict[str, Any]]) -> str:
@@ -29,6 +33,29 @@ def format_history(messages: list[dict[str, Any]]) -> str:
     return "\n".join(lines) if lines else "(无)"
 
 
+def build_rewrite_prompt(*, summary: str, history: str, question: str) -> str:
+    """填充查询改写模板."""
+    return rag_prompts.RAG_REWRITE_TEMPLATE.format(
+        summary=summary,
+        history=history,
+        question=question,
+    )
+
+
+def build_compact_prompt(
+    *,
+    max_chars: int,
+    old_summary: str,
+    old_messages: str,
+) -> str:
+    """填充历史压缩模板."""
+    return rag_prompts.RAG_COMPACT_TEMPLATE.format(
+        max_chars=max_chars,
+        old_summary=old_summary,
+        old_messages=old_messages,
+    )
+
+
 async def rewrite_question(
     question: str,
     *,
@@ -39,14 +66,13 @@ async def rewrite_question(
     if not summary and not recent_messages:
         return question
     try:
-        harness = get_agent_harness()
-        prompt = harness.build_rag_rewrite_prompt(
+        prompt = build_rewrite_prompt(
             summary=summary or "(无)",
             history=format_history(recent_messages),
             question=question,
         )
         llm = get_chat_llm(
-            model=harness.rag_rewrite_model(),
+            model=settings.dashscope_router_model,
             temperature=0,
             streaming=False,
             timeout=20,
@@ -78,14 +104,13 @@ async def summarize_history(
     if not old_messages:
         return None
     try:
-        harness = get_agent_harness()
-        prompt = harness.build_rag_compact_prompt(
+        prompt = build_compact_prompt(
             max_chars=max_chars,
             old_summary=old_summary or "(无)",
             old_messages=format_history(old_messages),
         )
         llm = get_chat_llm(
-            model=harness.rag_compact_model(),
+            model=settings.dashscope_chat_model,
             temperature=0,
             streaming=False,
             timeout=40,

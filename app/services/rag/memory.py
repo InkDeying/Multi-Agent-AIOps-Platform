@@ -10,14 +10,17 @@ from loguru import logger
 
 from app.config import settings
 from app.harness.rag.memory import summarize_history
-import app.services.chat_memory as chat_memory
+import app.db.rag_chat_memory as session_store
+
+# 兼容现有服务层测试和旧调用方；实际实现已经位于 app/db。
+chat_memory = session_store
 
 
 async def compact_if_needed(session_id: str) -> None:
     """超过 max_messages 时, 把较早消息合并进 summary."""
     if not settings.rag_chat_memory_enabled or not settings.rag_chat_compact_enabled:
         return
-    all_messages = await chat_memory.get_messages(session_id)
+    all_messages = await session_store.get_messages(session_id)
     if len(all_messages) <= settings.rag_chat_max_messages:
         return
     keep_count = max(2, settings.rag_chat_compact_keep_messages)
@@ -25,7 +28,7 @@ async def compact_if_needed(session_id: str) -> None:
     recent_messages = all_messages[-keep_count:]
     if not old_messages:
         return
-    old_summary = await chat_memory.get_summary(session_id)
+    old_summary = await session_store.get_summary(session_id)
     try:
         summary = await summarize_history(
             max_chars=settings.rag_chat_summary_max_chars,
@@ -33,10 +36,10 @@ async def compact_if_needed(session_id: str) -> None:
             old_messages=old_messages,
         )
         if summary:
-            await chat_memory.set_summary(
+            await session_store.set_summary(
                 session_id, summary[: settings.rag_chat_summary_max_chars]
             )
-            await chat_memory.replace_messages(session_id, recent_messages)
+            await session_store.replace_messages(session_id, recent_messages)
             logger.info(
                 f"[rag] session={session_id} compact 完成: "
                 f"{len(all_messages)} -> {len(recent_messages)} messages"

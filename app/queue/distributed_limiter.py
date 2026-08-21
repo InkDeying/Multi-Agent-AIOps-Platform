@@ -29,12 +29,12 @@ import socket
 import time
 import uuid
 from contextlib import asynccontextmanager
-from contextvars import ContextVar
 from typing import Any, AsyncIterator, Optional
 
 from loguru import logger
 
 from app.config import settings
+from app.common.slot_context import current_slot
 
 
 class DistributedLimitBusy(Exception):
@@ -201,10 +201,6 @@ class SlotHandle:
         await self._stop_heartbeat()
         if not self._paused:
             await release_slot(self.resource, self.token)
-
-
-# 当前协程持有的槽 (供 tool_runner 在审批等待时 pause/resume)
-current_slot: ContextVar[Optional[SlotHandle]] = ContextVar("current_slot", default=None)
 
 
 @asynccontextmanager

@@ -144,22 +144,23 @@ gate; confirm credentials, cost, data scope, and service readiness first.
 | `docs/CONCURRENCY_TEST_GUIDE.md` | Reproducible queue, rate-limit, and concurrency checks |
 | `docs/PRESSURE_TEST_REPORT.md` | Historical environment-specific pressure-test evidence |
 | `app/api/` | HTTP/SSE ingress and request/response contracts |
+| `app/common/` | Cross-layer pure helpers only; no business, IO, settings, or upper-layer imports |
 | `app/services/` | Use-case services such as diagnosis and RAG chat |
-| `app/orchestration/` | Diagnosis-mode selection, execution, audit, and event conversion |
-| `app/agents/fast/` | Fast graph, state, Skill-Plan-Execute-Replan nodes, report synthesis, and reroute policy |
+| `app/orchestration/` | Diagnosis-mode selection, deep-context loading, execution, audit, event conversion, and caller-supplied hooks |
+| `app/agents/fast/` | Fast graph, state, Skill-Plan-Execute-Replan nodes, report synthesis, reroute policy, and final tool catalog assembly |
 | `app/agents/deep/` | Deep graph, state, specialist specs/shared runner, evidence reduction, RCA, and report rendering |
 | `app/agents/delegates/` | Reusable `delegate_to_*` agent definitions and tool adapters |
 | `app/harness/core/` | LLM factories, parsing, structured output, provider adapters, and shared Harness utilities |
 | `app/harness/prompts/` | Prompt text for the fast diagnosis graph and RAG chat; runtime policy remains outside this package |
-| `app/harness/rag/` | RAG capabilities including query rewriting, history summarization, embeddings, document splitting, vector/hybrid retrieval, and provider-specific reranking |
+| `app/harness/rag/` | RAG capabilities including query rewriting, history summarization, document indexing, embeddings, splitting, vector/hybrid retrieval, and provider-specific reranking |
 | `app/harness/mcp/` | MCP client lifecycle and lazy MCP tool exposure |
-| `app/harness/runtime/` | Agent harness facade, permissions, approvals, tool orchestration, budgets, errors, and replan policy |
+| `app/harness/runtime/` | Agent harness facade, permissions, tool orchestration, budgets, errors, and replan policy; persistence adapters stay outside |
 | `app/harness/skills/` | Skill models, loader, registry, playbooks, and Skill documentation |
-| `app/harness/tools/` | Tool metadata, local tool definitions, base-tool loading, and tool catalog |
+| `app/harness/tools/` | Tool metadata, local tool definitions, and base-tool loading |
 | `app/harness/wiki/` | Runtime LLM Wiki experience storage, recall, cross-process locking, and deterministic text utilities |
 | `app/incidents/` | Alert normalization/correlation, incident ingestion, diagnosis-task storage, and task-scoped cleanup |
-| `app/evidence/`, `app/db/` | Evidence persistence, shared Postgres/Redis/Milvus primitives, and schema ownership |
-| `app/queue/` | Redis Streams, worker coordination, distributed slots, rate limits, and queue observability |
+| `app/evidence/`, `app/db/` | Evidence, approval, AgentRun/ToolCall, RAG chat memory, Wiki storage paths, shared Postgres/Redis/Milvus primitives, and schema ownership |
+| `app/queue/` | Redis Streams, worker coordination, distributed slots, Redis rate counters, and queue observability |
 | `mcp_servers/` | External MCP process boundaries |
 | `benchmark/` | Retrieval/RAG evaluation datasets, runner, and generated reports |
 | `data/kb_corpus/` | Versioned public RAG corpus; not operational documentation |
@@ -180,6 +181,8 @@ are the compact boundaries an agent must preserve while editing:
 - `fast` uses Skill Router -> Planner -> Executor -> Replanner -> Report.
 - `deep` uses incident context -> evidence plan -> isolated specialist fan-out ->
   evidence reduction -> RCA -> remediation proposal -> report.
+- Orchestration loads persisted task/group facts and Wiki context before the
+  deep graph starts. Agent nodes consume injected state and do not query storage.
 - Specialist agents return compressed Evidence. Their private intermediate LLM
   conversation must not become shared graph state.
 - Postgres is the fact authority for alerts, groups, tasks, agent runs, tool
@@ -197,6 +200,9 @@ are the compact boundaries an agent must preserve while editing:
   behavior must remain distinguishable.
 - Do not move provider-specific behavior into API routes. Keep ingress, use-case,
   orchestration, runtime, and provider boundaries distinct.
+- Cross-use-case side effects such as short-term report caching are injected by
+  the owning service through explicit runner hooks; orchestration does not write
+  those stores directly.
 
 ## 6. Sensitive Areas
 
@@ -205,7 +211,7 @@ Changes in these areas require focused evidence and usually separate approval:
 - `.env.example` and `app/config.py`: provider selection, credentials, public
   endpoints, concurrency, and security defaults.
 - `app/harness/runtime/permissions.py`, `tool_filter.py`, `tool_runner.py`, and
-  `approvals.py`: public safety and side-effect boundaries.
+  `app/db/approvals.py`: public safety and side-effect boundaries.
 - `mcp_servers/docker_server.py`: contains a restart operation. Never treat every
   Docker tool as read-only.
 - `app/db/postgres.py`: schema and persistence compatibility.

@@ -138,7 +138,7 @@ _delegate_tools_cache: Optional[List[BaseTool]] = None
 def get_delegate_tools() -> List[BaseTool]:
     """返回所有 delegate_to_* 工具.
 
-    主 Executor 通过 ``app.harness.tools.catalog.get_all_tools()`` 间接拿到这些工具，
+    主 Executor 通过 ``app.agents.tool_catalog.get_all_tools()`` 间接拿到这些工具，
     Skill 在 allowed_tools 里引用 delegate_to_<agent_type> 即可委托。
     """
     global _delegate_tools_cache

@@ -11,13 +11,16 @@
   - 高层用 langchain_milvus, 与 LangChain 生态无缝衔接 (RAG / Retriever)
 """
 
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
-from pymilvus import MilvusClient, MilvusException, connections, utility
+from pymilvus import Collection, MilvusClient, MilvusException, connections, utility
 
 from app.config import settings
 from app.exceptions import VectorStoreError
+
+# Milvus 单次 query 的行数上限 (16384 是服务端默认 offset+limit 上限).
+_CHUNK_QUERY_LIMIT = 16384
 
 
 def milvus_uri() -> str:
@@ -44,6 +47,44 @@ def connect_orm_alias() -> Tuple[Any, str]:
     if alias not in [c[0] for c in connections.list_connections()]:
         connections.connect(alias=alias, uri=uri)
     return client, alias
+
+
+def get_collection(
+    name: Optional[str] = None,
+    *,
+    load: bool = False,
+) -> Collection:
+    """获取 ORM Collection，统一处理 MilvusClient/ORM alias 桥接。"""
+    _, alias = connect_orm_alias()
+    collection = Collection(name or settings.milvus_collection, using=alias)
+    if load:
+        collection.load()
+    return collection
+
+
+def query_collection(
+    *,
+    expr: str,
+    output_fields: List[str],
+    limit: int = _CHUNK_QUERY_LIMIT,
+    name: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """执行 Collection 查询，隐藏底层 ORM 连接细节。"""
+    collection = get_collection(name, load=True)
+    return list(
+        collection.query(
+            expr=expr,
+            output_fields=output_fields,
+            limit=limit,
+        )
+    )
+
+
+def delete_collection_expr(expr: str, *, name: Optional[str] = None) -> None:
+    """按表达式删除 Collection 记录并 flush。"""
+    collection = get_collection(name)
+    collection.delete(expr=expr)
+    collection.flush()
 
 
 class MilvusManager:
@@ -169,6 +210,54 @@ class MilvusManager:
             logger.warning(f"已删除 collection: {col}")
         except Exception as e:
             raise VectorStoreError(f"删除 collection 失败: {e}") from e
+
+
+# ============================================================
+# 知识库 collection 的元数据原语 (文档管理用)
+# ============================================================
+
+def count_chunks_by_source(collection: Optional[str] = None) -> Dict[str, int]:
+    """按 source 聚合各文档的 chunk 数 (source -> chunk_count).
+
+    走 ORM Collection (default alias, 由 milvus_manager.connect 注册)。
+    查询失败返回空 dict, 调用方按"无文档"处理。
+    """
+    name = collection or settings.milvus_collection
+    try:
+        rows = query_collection(
+            expr="pk >= 0",  # 全表, 只要 source 字段
+            output_fields=["source"],
+            limit=_CHUNK_QUERY_LIMIT,
+            name=name,
+        )
+    except Exception as e:
+        logger.warning(f"count_chunks_by_source({name}) 查询失败: {e}")
+        return {}
+    counter: Dict[str, int] = {}
+    for row in rows:
+        source = row.get("source") or "unknown"
+        counter[source] = counter.get(source, 0) + 1
+    return counter
+
+
+def delete_chunks_by_source(source: str, collection: Optional[str] = None) -> int:
+    """按 source 删除该文档的全部 chunks, 返回删除的 chunk 数.
+
+    先 query 出主键再用 pk 列表删除 (比 expr 直接删更精确); 异常向上抛,
+    由调用方包装为 VectorStoreError。
+    """
+    name = collection or settings.milvus_collection
+    rows = query_collection(
+        expr=f'source == "{source}"',
+        output_fields=["pk"],
+        limit=_CHUNK_QUERY_LIMIT,
+        name=name,
+    )
+    if not rows:
+        return 0
+    pks = [r["pk"] for r in rows]
+    delete_collection_expr(f"pk in {pks}", name=name)
+    return len(pks)
 
 
 # ============================================================

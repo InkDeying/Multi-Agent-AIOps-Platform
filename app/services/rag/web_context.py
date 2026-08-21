@@ -15,8 +15,8 @@ from typing import Any
 from loguru import logger
 
 from app.config import settings
-from app.web_search import format_results, get_provider, search
-import app.services.chat_memory as chat_memory
+import app.db.rag_chat_memory as rag_memory_store
+from app.harness.websearch import format_results, get_provider, search
 
 _SENSITIVE_WEB_PATTERNS = (
     re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
@@ -198,7 +198,7 @@ async def build_web_context(
         return f"({reason})", [], [], reason
 
     try:
-        recent_reports = await chat_memory.get_recent_diagnosis_reports(limit=3)
+        recent_reports = await rag_memory_store.get_recent_diagnosis_reports(limit=3)
     except Exception as e:
         logger.warning(f"[rag-web] 读取最近诊断报告失败: {type(e).__name__}: {e}")
         recent_reports = []
