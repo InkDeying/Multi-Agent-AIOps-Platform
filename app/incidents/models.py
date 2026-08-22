@@ -75,6 +75,11 @@ class IncidentIngestResult(BaseModel):
     correlation_key: str
     task_id: str
     task_created: bool
+    needs_enqueue: bool = False
+    """新任务, 或复用了 "pending 且从未成功入队" 的任务 —— 调用方应尝试投递队列.
+
+    复用 running 任务 / 已带队列消息的 pending 任务时为 False, 避免重复投递。
+    """
 
 
 class DiagnosisTaskRecord(BaseModel):

@@ -132,7 +132,7 @@ python benchmark/run_benchmark.py ragas --limit 5
 | `app/harness/skills/` | Skill 模型、加载器、注册表、Playbook 和 Skill 文档 |
 | `app/harness/tools/` | 工具元数据、本地工具和基础工具加载 |
 | `app/harness/wiki/` | 运行时 LLM Wiki 经验存储、召回、跨进程写锁和确定性文本工具 |
-| `app/incidents/` | 告警归一化/关联、事件入库、诊断任务持久化和任务级清理 |
+| `app/incidents/` | 告警归一化/关联、事件入库、任务入队派发与补偿重投、诊断任务存储和任务级清理 |
 | `app/evidence/`、`app/db/` | 证据、审批、AgentRun/ToolCall、RAG Chat 记忆、Wiki 存储路径、Postgres/Redis/Milvus 共享原语和 Schema |
 | `app/queue/` | Redis Streams、Worker 协调、分布式并发槽、Redis 限流计数和队列可观测性 |
 | `mcp_servers/` | 外部 MCP 进程边界 |
@@ -166,7 +166,8 @@ python benchmark/run_benchmark.py ragas --limit 5
   无鉴权；`CORS_ALLOW_ORIGINS` 未设置时 CORS 不注册（仅同源）。
 - `PERMISSION_MODE=bypass` 只允许开发使用，不能推荐给公开或生产部署。
 - 可重试副作用必须具备幂等性，或明确的不确定结果恢复路径。队列 ACK、重试、Pending
-  回收和 DLQ 必须保持可区分。
+  回收和 DLQ 必须保持可区分。"已落库但从未入队" 的 pending 任务由 Worker 侧补偿扫描
+  重投（`app/incidents/dispatch.py`），并用原子入队占位防止重复投递。
 - Provider 专属行为不能塞进 API 路由；入口、用例、编排、运行时和 Provider 边界应保持分离。
 - 短期报告缓存等跨用例副作用由所属 Service 通过显式 Runner Hook 注入；编排层不直接写入
   这些存储。

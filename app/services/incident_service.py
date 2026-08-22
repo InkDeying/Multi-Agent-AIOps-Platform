@@ -7,12 +7,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from loguru import logger
+
 from app.config import settings
 from app.evidence.repository import evidence_repository
+from app.incidents.dispatch import dispatch_diagnosis_task
 from app.incidents.models import DiagnosisMode
 from app.incidents.repository import incident_repository
 from app.db.agent_runs import agent_run_repository
-from app.queue.redis_streams import incident_queue, level_for_severity
+from app.queue.redis_streams import level_for_severity
 
 
 async def list_tasks(limit: int = 20) -> dict[str, Any]:
@@ -89,38 +92,38 @@ async def create_incident_from_chat(
         context=context,
     )
 
-    queue_message_id = ""
-    if settings.incident_pipeline_enabled and result.task_created:
-        try:
-            queue_message_id = await incident_queue.enqueue_task(
-                task_id=result.task_id,
-                incident_group_id=result.incident_group_id,
-                incident_id=result.incident_id,
-                diagnosis_mode=mode.value,
-                priority=100,
-                level=level_for_severity(severity),
-                payload={
-                    "query": query,
-                    "alertname": title or query[:80],
-                    "severity": severity,
-                    "service": service,
-                    "source": f"chat:{session_id}",
-                },
+    # needs_enqueue 而不是 task_created: 复用 "pending 且从未入队" 的任务时
+    # 也要补投, 避免上次入队失败的任务永远 pending (幽灵任务)。
+    message_id: str | None = None
+    if settings.incident_pipeline_enabled and result.needs_enqueue:
+        message_id = await dispatch_diagnosis_task(
+            task_id=result.task_id,
+            incident_group_id=result.incident_group_id,
+            incident_id=result.incident_id,
+            diagnosis_mode=mode.value,
+            priority=100,
+            level=level_for_severity(severity),
+            payload={
+                "query": query,
+                "alertname": title or query[:80],
+                "severity": severity,
+                "service": service,
+                "source": f"chat:{session_id}",
+            },
+        )
+        if message_id is None:
+            logger.warning(
+                f"[from_chat] task={result.task_id} not enqueued now; "
+                "worker reconciler will retry"
             )
-            await incident_repository.set_task_queue_message(
-                result.task_id,
-                queue_message_id,
-            )
-        except Exception:
-            queue_message_id = ""
 
     return {
         "task_id": result.task_id,
         "incident_group_id": result.incident_group_id,
         "incident_id": result.incident_id,
         "task_created": result.task_created,
-        "queue_message_id": queue_message_id,
-        "enqueued": bool(queue_message_id),
+        "queue_message_id": message_id or "",
+        "enqueued": bool(message_id),
     }
 
 

@@ -9,9 +9,9 @@ from typing import Any
 
 from loguru import logger
 
+from app.incidents.dispatch import dispatch_diagnosis_task
 from app.incidents.models import DiagnosisMode
 from app.incidents.repository import incident_repository
-from app.queue.redis_streams import incident_queue, level_for_severity
 
 
 def format_alert_as_query(alert: Any) -> str:
@@ -89,49 +89,8 @@ async def process_alertmanager_payload(payload: Any) -> dict[str, Any]:
                 diagnosis_mode=diagnosis_mode,
                 priority=priority,
             )
-
-            queue_message_id = ""
-            enqueued = False
-            if result.task_created:
-                queue_message_id = await incident_queue.enqueue_task(
-                    task_id=result.task_id,
-                    incident_group_id=result.incident_group_id,
-                    incident_id=result.incident_id,
-                    diagnosis_mode=diagnosis_mode.value,
-                    priority=priority,
-                    level=level_for_severity(
-                        str(alert.labels.get("severity", ""))
-                    ),
-                    payload={
-                        "query": query,
-                        "alert_id": result.alert_id,
-                        "alertname": alertname,
-                        "severity": alert.labels.get("severity", ""),
-                        "instance": instance,
-                        "summary": alert.annotations.get("summary", ""),
-                        "fingerprint": alert.fingerprint or "",
-                        "startsAt": alert.startsAt,
-                    },
-                )
-                await incident_repository.set_task_queue_message(
-                    result.task_id,
-                    queue_message_id,
-                )
-                enqueued = True
-
-            accepted.append(
-                {
-                    "alertname": alertname,
-                    "incident_group_id": result.incident_group_id,
-                    "incident_id": result.incident_id,
-                    "task_id": result.task_id,
-                    "task_created": result.task_created,
-                    "enqueued": enqueued,
-                    "queue_message_id": queue_message_id,
-                    "diagnosis_mode": diagnosis_mode.value,
-                }
-            )
         except Exception as exc:
+            # 只有入库失败才算这条告警 failed; 入队失败在下面单独处理。
             logger.exception(
                 f"[webhook] alert={alertname} ingestion failed: {exc}"
             )
@@ -142,6 +101,55 @@ async def process_alertmanager_payload(payload: Any) -> dict[str, Any]:
                     "error": f"{type(exc).__name__}: {exc}",
                 }
             )
+            continue
+
+        # 入库成功后的投递: needs_enqueue 覆盖 "新任务" 和 "复用 pending 幽灵任务"。
+        # 投递失败只降级 enqueued=False, 任务事实已在 Postgres, 由 Worker 补偿重投。
+        queue_message_id = ""
+        enqueued = False
+        if result.needs_enqueue:
+            try:
+                queue_message_id = await dispatch_diagnosis_task(
+                    task_id=result.task_id,
+                    incident_group_id=result.incident_group_id,
+                    incident_id=result.incident_id,
+                    diagnosis_mode=diagnosis_mode.value,
+                    priority=priority,
+                    payload={
+                        "query": query,
+                        "alert_id": result.alert_id,
+                        "alertname": alertname,
+                        "severity": alert.labels.get("severity", ""),
+                        "instance": instance,
+                        "summary": alert.annotations.get("summary", ""),
+                        "fingerprint": alert.fingerprint or "",
+                        "startsAt": alert.startsAt,
+                    },
+                ) or ""
+            except Exception as exc:
+                # dispatch 内部已处理 XADD 失败; 这里兜底 claim 阶段的 DB 异常。
+                logger.exception(
+                    f"[webhook] task={result.task_id} dispatch error: {exc}"
+                )
+            enqueued = bool(queue_message_id)
+            if not enqueued:
+                logger.warning(
+                    f"[webhook] task={result.task_id} not enqueued now; "
+                    "worker reconciler will retry"
+                )
+
+        accepted.append(
+            {
+                "alertname": alertname,
+                "incident_group_id": result.incident_group_id,
+                "incident_id": result.incident_id,
+                "task_id": result.task_id,
+                "task_created": result.task_created,
+                "enqueued": enqueued,
+                "queue_message_id": queue_message_id,
+                "diagnosis_mode": diagnosis_mode.value,
+            }
+        )
 
     logger.info(
         f"[webhook] received={len(payload.alerts)} "

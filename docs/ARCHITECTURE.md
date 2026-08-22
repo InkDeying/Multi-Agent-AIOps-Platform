@@ -222,7 +222,13 @@ Redis 保存运行态队列、Consumer Group、Worker 心跳、全局并发槽�
 ```
 
 - 手动接口和 Webhook 使用固定窗口限流；Redis 不可用时采用 fail-open。
-- Worker 心跳、Pending 回收、最大尝试次数和 DLQ 防止任务静默丢失。
+- 任务投递采用 "Postgres 原子占位 → XADD → 回写消息 id" 协议（`app/incidents/dispatch.py`）。
+  入队失败时占位被释放、任务回到 "pending 且无消息" 状态，接口如实返回
+  `enqueued=false`；复用去重任务时若其从未入队，提交方会补投而不是静默复用。
+- Worker 周期运行补偿扫描（`DIAGNOSIS_REQUEUE_*`）：重投 "pending 但从未成功入队"
+  的任务，宽限期避开在途投递。它与 Pending 回收（XAUTOCLAIM）互补——后者只能
+  回收已投递未 ACK 的消息，覆盖不到 XADD 从未成功的任务。
+- Worker 心跳、Pending 回收、入队补偿、最大尝试次数和 DLQ 防止任务静默丢失。
 - 增加 Worker 数量不会自动提高真实诊断并发；全局执行槽仍是上限。
 - 同步 SSE 与后台 Worker 使用不同的全局槽，避免一种入口独占全部资源。
 

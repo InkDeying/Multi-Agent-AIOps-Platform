@@ -158,7 +158,7 @@ gate; confirm credentials, cost, data scope, and service readiness first.
 | `app/harness/skills/` | Skill models, loader, registry, playbooks, and Skill documentation |
 | `app/harness/tools/` | Tool metadata, local tool definitions, and base-tool loading |
 | `app/harness/wiki/` | Runtime LLM Wiki experience storage, recall, cross-process locking, and deterministic text utilities |
-| `app/incidents/` | Alert normalization/correlation, incident ingestion, diagnosis-task storage, and task-scoped cleanup |
+| `app/incidents/` | Alert normalization/correlation, incident ingestion, task enqueue dispatch/requeue compensation, diagnosis-task storage, and task-scoped cleanup |
 | `app/evidence/`, `app/db/` | Evidence, approval, AgentRun/ToolCall, RAG chat memory, Wiki storage paths, shared Postgres/Redis/Milvus primitives, and schema ownership |
 | `app/queue/` | Redis Streams, worker coordination, distributed slots, Redis rate counters, and queue observability |
 | `mcp_servers/` | External MCP process boundaries |
@@ -203,7 +203,9 @@ are the compact boundaries an agent must preserve while editing:
   or production deployment.
 - Retryable side effects require idempotency or an explicit uncertain-outcome
   recovery path. Queue acknowledgement, retries, pending recovery, and DLQ
-  behavior must remain distinguishable.
+  behavior must remain distinguishable. Persisted-but-unqueued pending tasks
+  are re-enqueued by the worker-side requeue reconciler
+  (`app/incidents/dispatch.py`), guarded by an atomic enqueue claim.
 - Do not move provider-specific behavior into API routes. Keep ingress, use-case,
   orchestration, runtime, and provider boundaries distinct.
 - Cross-use-case side effects such as short-term report caching are injected by

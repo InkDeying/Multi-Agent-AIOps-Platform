@@ -96,7 +96,7 @@ class IngestMixin:
                     """,
                     incident_group_id,
                 )
-                task_id, task_created = await self._create_or_get_task(
+                task_id, task_created, needs_enqueue = await self._create_or_get_task(
                     conn,
                     incident_group_id=incident_group_id,
                     incident_id=incident_id,
@@ -113,6 +113,7 @@ class IngestMixin:
             correlation_key=correlation_key,
             task_id=task_id,
             task_created=task_created,
+            needs_enqueue=needs_enqueue,
         )
 
     async def _upsert_alert(self, conn: Any, alert: NormalizedAlert) -> None:

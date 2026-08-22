@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import contextlib
 import os
+import time
 from typing import Any
 
 from loguru import logger
@@ -20,12 +21,23 @@ from loguru import logger
 from app.common.approval_port import set_approval_port
 from app.orchestration.audit import run_legacy_langgraph_with_audit
 from app.config import settings
+from app.incidents.dispatch import (
+    dispatch_diagnosis_task,
+    requeue_unqueued_pending_tasks,
+)
 from app.queue.distributed_limiter import distributed_slot
 from app.harness.mcp.client import mcp_client_manager
 from app.db.postgres import close_postgres, connect_postgres, init_incident_schema
 from app.db.approvals import approval_repository
 from app.incidents.repository import incident_repository
 from app.queue.redis_streams import incident_queue
+
+
+def _as_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
 
 
 class DiagnosisWorker:
@@ -44,6 +56,7 @@ class DiagnosisWorker:
         self.consumer_name = consumer_name or suffix
         self._stopping = asyncio.Event()
         self._heartbeat_task: asyncio.Task[None] | None = None
+        self._last_requeue_monotonic = 0.0
 
     async def start(self) -> None:
         set_approval_port(approval_repository)
@@ -55,10 +68,13 @@ class DiagnosisWorker:
         logger.info(f"[diagnosis-worker] started consumer={self.consumer_name}")
 
         while not self._stopping.is_set():
-            # 先尝试回收 stale pending 任务, 再读新任务。
+            # 先补偿 "落库但从未入队" 的幽灵任务, 再回收 stale pending, 再读新任务。
             # 为什么放在这里:
-            # - 普通 XREADGROUP 只读新消息, 不会自动处理崩溃 Worker 留下的 pending;
-            # - 每轮先 reclaim, 可以让旧任务恢复执行。
+            # - XAUTOCLAIM 只能回收已投递未 ACK 的消息, 覆盖不到 XADD 从未成功的任务;
+            # - 补偿以 Postgres 事实为准, 每个补偿周期扫一次, 宽限期避开在途投递。
+            await self._requeue_unqueued_once()
+            # 普通XREADGROUP 只读新消息, 不会自动处理崩溃 Worker 留下的 pending;
+            # 每轮先 reclaim, 可以让旧任务恢复执行。
             tasks = await self._claim_stale_tasks_once()
             if not tasks:
                 tasks = await incident_queue.read_tasks(
@@ -188,50 +204,37 @@ class DiagnosisWorker:
             )
             return
 
-        # 仍可重试: 先把 Postgres 状态改回 pending, 再重新 XADD 一条消息,
-        # 最后 ACK 当前失败消息。这个顺序避免"状态显示 pending 但队列没消息"。
+        # 仍可重试: 先把 Postgres 状态改回 pending (顺带清空 queue_message_id),
+        # 再重新投递队列, 最后 ACK 当前失败消息。投递统一走 dispatch 的
+        # 原子占位, 失败时任务留在 "pending 且无消息" 状态, 由补偿扫描重投。
         await incident_repository.mark_task_retry_pending(task_id, error)
-        new_message_id = await self._reenqueue_task(task_id, item, task or {})
-        await incident_repository.set_task_queue_message(task_id, new_message_id)
-        await incident_queue.ack(message_id, stream=item.get("__stream__"))
-        logger.warning(
-            f"[diagnosis-worker] task={task_id} retry scheduled "
-            f"attempts={attempts}/{max_attempts} old_msg={message_id} new_msg={new_message_id}"
-        )
-
-    async def _reenqueue_task(
-        self,
-        task_id: str,
-        item: dict[str, Any],
-        task: dict[str, Any],
-    ) -> str:
-        """把同一个 task 重新投回 Redis Stream, 等下一轮 attempt。"""
         payload = item.get("payload") if isinstance(item.get("payload"), dict) else None
         if payload is None:
             payload = task.get("payload") if isinstance(task.get("payload"), dict) else {}
-
-        def _as_int(value: Any, default: int) -> int:
-            try:
-                return int(value)
-            except Exception:
-                return default
-
-        return await incident_queue.enqueue_task(
+        new_message_id = await dispatch_diagnosis_task(
             task_id=task_id,
             incident_group_id=str(
-                item.get("incident_group_id")
-                or task.get("incident_group_id")
-                or ""
+                item.get("incident_group_id") or task.get("incident_group_id") or ""
             ),
             incident_id=str(item.get("incident_id") or task.get("incident_id") or ""),
             diagnosis_mode=str(
-                item.get("diagnosis_mode")
-                or task.get("diagnosis_mode")
-                or "fast"
+                item.get("diagnosis_mode") or task.get("diagnosis_mode") or "fast"
             ),
             priority=_as_int(item.get("priority") or task.get("priority"), 100),
             payload=payload,
             level=item.get("level"),  # 重试保持原优先级, 不降级
+        )
+        await incident_queue.ack(message_id, stream=item.get("__stream__"))
+        if new_message_id is None:
+            # 旧消息已 ACK, 任务所有权交给补偿扫描; 不 ACK 反而会造成双消息。
+            logger.warning(
+                f"[diagnosis-worker] task={task_id} retry enqueue deferred "
+                f"attempts={attempts}/{max_attempts}; reconciler will requeue"
+            )
+            return
+        logger.warning(
+            f"[diagnosis-worker] task={task_id} retry scheduled "
+            f"attempts={attempts}/{max_attempts} old_msg={message_id} new_msg={new_message_id}"
         )
 
     async def _claim_stale_tasks_once(self) -> list[tuple[str, dict[str, Any]]]:
@@ -241,6 +244,26 @@ class DiagnosisWorker:
             min_idle_ms=settings.diagnosis_worker_reclaim_idle_ms,
             count=settings.diagnosis_worker_reclaim_count,
         )
+
+    async def _requeue_unqueued_once(self) -> None:
+        """按配置周期补偿 "pending 但从未入队" 的任务; 异常不打断消费循环。"""
+        if settings.diagnosis_requeue_interval_sec <= 0:
+            return
+        now = time.monotonic()
+        if now - self._last_requeue_monotonic < settings.diagnosis_requeue_interval_sec:
+            return
+        self._last_requeue_monotonic = now
+        try:
+            await requeue_unqueued_pending_tasks(
+                grace_sec=settings.diagnosis_requeue_grace_sec,
+                batch_size=settings.diagnosis_requeue_batch_size,
+            )
+        except Exception as exc:
+            # 补偿失败 (常见: Postgres/Redis 短暂不可用) 留到下个周期,
+            # 不能让 Worker 主循环退出。
+            logger.warning(
+                f"[diagnosis-worker] requeue scan failed: {type(exc).__name__}: {exc}"
+            )
 
     async def _heartbeat_loop(self) -> None:
         """Worker 进程活着期间, 定期刷新 Redis 心跳 key (用于 stale 检测)。"""

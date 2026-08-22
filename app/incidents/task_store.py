@@ -17,6 +17,11 @@ from app.db.base import json_dump, new_id
 from app.incidents.models import DiagnosisMode, NormalizedAlert
 from app.incidents.rows import record_to_dict, records_to_dicts
 
+# 入队占位标记: claim_task_enqueue 写入它表示"某进程正在为该任务执行 XADD",
+# 真实 Redis message id 回写后会覆盖它; 投递失败则释放回 NULL, 交给补偿扫描重投。
+# Redis message id 形如 "1690000000000-0", 不会与该值混淆。
+ENQUEUE_CLAIM_MARKER = "__claim__"
+
 
 class TaskStoreMixin:
     """诊断任务的创建、状态流转、以及排队相关的读."""
@@ -31,7 +36,7 @@ class TaskStoreMixin:
         alert: NormalizedAlert,
         diagnosis_mode: DiagnosisMode,
         priority: int,
-    ) -> tuple[str, bool]:
+    ) -> tuple[str, bool, bool]:
         # 去重幂等 (改造文档第 7 步): 不再 SELECT-then-INSERT (并发下两条相同告警可能
         # 同时查不到再各插一条). 改成依赖部分唯一索引 idx_diagnosis_task_dedup_active
         # (dedup_key WHERE status IN pending/running) 做 INSERT ON CONFLICT, 由数据库
@@ -60,7 +65,11 @@ class TaskStoreMixin:
                 repeat_count = diagnosis_tasks.repeat_count + 1,
                 last_seen_at = now(),
                 updated_at = now()
-            RETURNING id, (xmax = 0) AS inserted
+            RETURNING
+                id,
+                (xmax = 0) AS inserted,
+                status,
+                queue_message_id
             """,
             task_id,
             incident_group_id,
@@ -74,7 +83,81 @@ class TaskStoreMixin:
         # xmax = 0 表示这是真正的新插入; 否则是命中已有活跃任务被 DO UPDATE.
         returned_id = str(row["id"])
         task_created = bool(row["inserted"])
-        return returned_id, task_created
+        # 复用命中已有任务时, 判断是否需要补投: 只有 "pending 且从未成功入队" 的
+        # 复用任务才需要 (说明上次投递失败, 留下了幽灵任务); running 的复用归
+        # 当前 Worker 管, 已带 queue_message_id 的 pending 复用说明消息还在路上。
+        existing_message_id = str(row["queue_message_id"] or "")
+        needs_enqueue = task_created or (
+            str(row["status"] or "") == "pending" and not existing_message_id
+        )
+        return returned_id, task_created, needs_enqueue
+
+    async def claim_task_enqueue(self, task_id: str) -> bool:
+        """原子地认领一个任务的入队权, 防止并发投递产生重复消息.
+
+        只有 status='pending' 且 queue_message_id 为空的任务能被认领;
+        认领即写入占位标记 (见 ENQUEUE_CLAIM_MARKER), 竞争方 UPDATE 影响 0 行。
+        """
+        async with acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE diagnosis_tasks
+                SET queue_message_id = $2, updated_at = now()
+                WHERE id = $1
+                  AND status = 'pending'
+                  AND (queue_message_id IS NULL OR queue_message_id = '')
+                RETURNING id
+                """,
+                task_id,
+                ENQUEUE_CLAIM_MARKER,
+            )
+        return row is not None
+
+    async def release_task_enqueue_claim(self, task_id: str) -> None:
+        """投递失败后释放占位, 让任务回到 "可补投" 状态."""
+        async with acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE diagnosis_tasks
+                SET queue_message_id = NULL, updated_at = now()
+                WHERE id = $1 AND queue_message_id = $2
+                """,
+                task_id,
+                ENQUEUE_CLAIM_MARKER,
+            )
+
+    async def list_unqueued_pending_tasks(
+        self,
+        older_than_sec: int,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """找出 "pending 但没有队列消息" 的任务 (幽灵任务), 供补偿重投.
+
+        - queue_message_id 为空 或 停在占位标记: 从未成功入队, 或投递中途断掉;
+        - updated_at 宽限期: 排除 "刚落库正在投递" 和 "刚被认领" 的任务,
+          避免和提交方/重试路径竞态造成重复消息。
+        """
+        async with acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, incident_group_id, incident_id, status, priority,
+                       diagnosis_mode, payload, attempts, max_attempts
+                FROM diagnosis_tasks
+                WHERE status = 'pending'
+                  AND (
+                      queue_message_id IS NULL
+                      OR queue_message_id = ''
+                      OR queue_message_id = $1
+                  )
+                  AND updated_at < now() - make_interval(secs => $2)
+                ORDER BY created_at
+                LIMIT $3
+                """,
+                ENQUEUE_CLAIM_MARKER,
+                int(older_than_sec),
+                max(1, int(limit)),
+            )
+        return records_to_dicts(rows)
 
 
     async def set_task_queue_message(self, task_id: str, message_id: str) -> None:
@@ -157,7 +240,9 @@ class TaskStoreMixin:
 
         预期效果:
         - 任务单次失败后回到 pending, 可以重新入队;
-        - attempts 保留历史尝试次数, 便于到达 max_attempts 后进入 DLQ。
+        - attempts 保留历史尝试次数, 便于到达 max_attempts 后进入 DLQ;
+        - queue_message_id 清空: 旧消息即将被 ACK, 若后续重投失败,
+          任务处于 "pending 且无消息" 状态, 会被补偿扫描重新投递。
         """
         async with acquire() as conn:
             await conn.execute(
@@ -166,6 +251,7 @@ class TaskStoreMixin:
                 SET status = 'pending',
                     error = $2,
                     claimed_at = NULL,
+                    queue_message_id = NULL,
                     updated_at = now()
                 WHERE id = $1
                 """,

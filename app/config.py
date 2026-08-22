@@ -224,6 +224,24 @@ class Settings(BaseSettings):
         default=3,
         description="单个诊断任务最大尝试次数",
     )
+    diagnosis_requeue_interval_sec: int = Field(
+        default=30,
+        description=(
+            "Worker 补偿扫描间隔秒数: 重投 'pending 但从未成功入队' 的任务; "
+            "<=0 关闭补偿。"
+        ),
+    )
+    diagnosis_requeue_grace_sec: int = Field(
+        default=60,
+        description=(
+            "补偿扫描的宽限秒数: 只扫 updated_at 早于该窗口的任务, "
+            "避开 '刚落库正在投递/刚被认领' 的在途任务。"
+        ),
+    )
+    diagnosis_requeue_batch_size: int = Field(
+        default=50,
+        description="补偿扫描单轮最多重投的任务数。",
+    )
     deep_diagnosis_enabled: bool = Field(
         default=True,
         description=(
