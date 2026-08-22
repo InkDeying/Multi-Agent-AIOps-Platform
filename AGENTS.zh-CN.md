@@ -160,6 +160,10 @@ python benchmark/run_benchmark.py ragas --limit 5
 - 可观察状态和明确证据决定完成；模型文本本身不能证明工具、任务或处置已经成功。
 - 工具执行必须保留 Skill、Permission、Guardrail、审批和审计边界。只读工具可由运行时
   策略补充；写入、通知和高风险工具需要明确授权。
+- 控制面写操作有 Token 门禁：审批决定、诊断任务删除和 Skill 重载需要 `ADMIN_TOKEN`
+  （`X-Admin-Token`）；Alertmanager webhook 需要 `WEBHOOK_API_KEYS` 中的密钥
+  （`X-API-Key` 或 Bearer）。配置留空时接口 403 锁定；用户侧诊断与聊天端点有意保持
+  无鉴权；`CORS_ALLOW_ORIGINS` 未设置时 CORS 不注册（仅同源）。
 - `PERMISSION_MODE=bypass` 只允许开发使用，不能推荐给公开或生产部署。
 - 可重试副作用必须具备幂等性，或明确的不确定结果恢复路径。队列 ACK、重试、Pending
   回收和 DLQ 必须保持可区分。
@@ -172,8 +176,8 @@ python benchmark/run_benchmark.py ragas --limit 5
 以下区域的修改需要聚焦证据，通常还需单独确认：
 
 - `.env.example` 与 `app/config.py`：Provider 选择、凭证、公共端点、并发和安全默认值。
-- `app/harness/runtime/permissions.py`、`tool_filter.py`、`tool_runner.py` 和 `app/db/approvals.py`：
-  对外安全与副作用边界。
+- `app/harness/runtime/permissions.py`、`tool_filter.py`、`tool_runner.py`、`app/api/security.py`
+  和 `app/db/approvals.py`：对外安全与副作用边界。
 - `mcp_servers/docker_server.py`：包含重启操作，不能把所有 Docker 工具视为只读。
 - `app/db/postgres.py`：Schema 与持久化兼容性。
 - `app/queue/`、分布式并发槽、限流器、Worker 恢复和 DLQ：并发与重复执行风险。

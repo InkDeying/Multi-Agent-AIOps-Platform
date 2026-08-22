@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api.security import require_admin_token
 from app.services import incident_service
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
@@ -36,7 +37,11 @@ async def list_tasks(limit: int = 20) -> dict[str, Any]:
     return await incident_service.list_tasks(limit=limit)
 
 
-@router.post("/tasks/bulk-delete", summary="批量删除已结束的诊断任务")
+@router.post(
+    "/tasks/bulk-delete",
+    summary="批量删除已结束的诊断任务",
+    dependencies=[Depends(require_admin_token)],
+)
 async def bulk_delete_tasks(req: BulkDeleteTasksRequest) -> dict[str, Any]:
     return await incident_service.bulk_delete_tasks(req.task_ids)
 
@@ -53,7 +58,11 @@ async def get_task(task_id: str) -> dict[str, Any]:
     return task
 
 
-@router.delete("/tasks/{task_id}", summary="删除一条已结束的诊断任务")
+@router.delete(
+    "/tasks/{task_id}",
+    summary="删除一条已结束的诊断任务",
+    dependencies=[Depends(require_admin_token)],
+)
 async def delete_task(task_id: str) -> dict[str, Any]:
     """删除历史任务及其审计记录；运行中的任务必须先结束。"""
     try:

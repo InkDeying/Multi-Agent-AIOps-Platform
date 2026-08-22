@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api.security import require_admin_token
 from app.services import approval_service
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
@@ -36,7 +37,11 @@ async def get_one(req_id: str) -> dict[str, Any]:
     return row
 
 
-@router.post("/{req_id}/decide", summary="审批: approve / deny / cancel")
+@router.post(
+    "/{req_id}/decide",
+    summary="审批: approve / deny / cancel",
+    dependencies=[Depends(require_admin_token)],
+)
 async def decide(req_id: str, body: DecideRequest) -> dict[str, Any]:
     if body.decision not in ("approved", "denied", "cancelled"):
         raise HTTPException(status_code=400, detail="decision 必须是 approved / denied / cancelled")

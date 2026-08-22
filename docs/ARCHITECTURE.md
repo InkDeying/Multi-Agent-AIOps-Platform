@@ -251,9 +251,15 @@ API 和 Worker 使用同一个 Python 镜像，通过 Compose Command 区分角�
 - Windows `run.ps1` 不是完整 V3 后台拓扑启动器；完整部署应使用 Compose `app` Profile。
 - deep 专业 Agent 尚未统一接入 fast 的 PermissionMode 决策。
 - LogAgent 默认只检索知识库，不连接真实日志后端。
-- CORS 当前允许全部来源，适合本地演示，不适合直接暴露到生产公网。
+- CORS 默认不注册（仅同源）；跨源需求通过 `CORS_ALLOW_ORIGINS` 显式开启，`*`
+  恢复旧的允许全部来源行为，仅建议本地调试使用。
+- 控制面写操作有 Token 门禁：审批决定、诊断任务删除、Skill 重载要求
+  `ADMIN_TOKEN`（`X-Admin-Token`）；Alertmanager webhook 要求 `WEBHOOK_API_KEYS`
+  中的密钥（`X-API-Key` 或 `Authorization: Bearer`）。配置留空时接口 403 锁定。
+  同步 SSE 诊断、手动提交与聊天升级等用户功能端点仍无认证，公网部署需反向代理
+  与网络层访问控制兜底。
 - 限流在 Redis 故障时 fail-open，这是可用性优先的明确取舍，不等同于安全网关。
-- 缺少用户认证、多租户隔离和细粒度数据授权。
+- 缺少用户认证、多租户隔离和细粒度数据授权（控制面 Token 是共享密钥，不是身份体系）。
 - `requirements.txt` 使用范围依赖而非完整锁文件，部署复现性受上游发布影响。
 
 这些限制应在具体需求出现时按风险逐项处理，不能通过一次大规模“整理”静默改写。

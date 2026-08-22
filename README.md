@@ -100,6 +100,11 @@ Windows PowerShell 激活虚拟环境：
 - 使用 DashScope Embedding 时，将 `EMBEDDING_PROVIDER` 改为 `dashscope` 并配置
   `DASHSCOPE_API_KEY`。
 - 将 `KB_ADMIN_TOKEN` 改成仅自己知道的值。
+- 设置 `ADMIN_TOKEN`（审批决定、事件删除、Skill 重载等控制面写操作的门禁）和
+  `WEBHOOK_API_KEYS`（Alertmanager webhook 密钥，逗号分隔）。两者留空时对应接口
+  返回 403 锁定；演示审批 inbox 或 webhook 告警前需先配置。
+- 需要跨源访问时设置 `CORS_ALLOW_ORIGINS`（逗号分隔；`*` 恢复旧的允许全部来源；
+  留空为仅同源）。
 
 项目会根据模型名称选择 Chat Provider：以 `deepseek` 开头的模型使用 `DEEPSEEK_API_KEY`，
 其他示例模型使用 DashScope 配置。不要把真实 Key 提交到 Git。
@@ -205,9 +210,11 @@ Redis 实例 redis-master-01 内存使用率 98%，客户端连接被强制断�
 模拟 Alertmanager Webhook：
 
 ```bash
-python scripts/mock_alert.py --scenario redis
+python scripts/mock_alert.py --scenario redis --api-key your-webhook-key
 python scripts/mock_alert.py --list-history
 ```
+
+`--api-key` 默认取环境变量 `WEBHOOK_API_KEYS` 的第一个值，须与服务端配置一致。
 
 压测命令可能创建真实任务或调用 LLM。先阅读[并发测试指南](docs/CONCURRENCY_TEST_GUIDE.md)，
 并从较小的 `--n` 开始。
@@ -231,6 +238,15 @@ python scripts/mock_alert.py --list-history
 ```http
 X-KB-Admin-Token: your-admin-token
 ```
+
+控制面写操作（审批决定、诊断任务删除、Skill 重载）和 webhook 另有独立门禁：
+
+```http
+X-Admin-Token: your-admin-token          # 审批决定 / 任务删除 / Skill 重载
+X-API-Key: your-webhook-key              # webhook (或 Authorization: Bearer)
+```
+
+对应配置项分别为 `ADMIN_TOKEN` 与 `WEBHOOK_API_KEYS`，留空时接口以 403 锁定。
 
 完整请求结构以运行中的 OpenAPI 文档为准。
 
@@ -290,7 +306,12 @@ X-KB-Admin-Token: your-admin-token
 - Docker MCP 包含受控重启能力，高风险工具默认阻断，不应使用 `PERMISSION_MODE=bypass`
   暴露到公网。
 - `ragas`、真实诊断、远程 Embedding、Rerank 和联网搜索可能产生费用或发送数据到外部服务。
-- 当前 CORS 允许所有来源，适合本地演示；生产部署必须增加身份认证、来源限制和反向代理策略。
+- 控制面写操作由 Token 门禁保护：审批决定、诊断任务删除、Skill 重载需要
+  `ADMIN_TOKEN`（`X-Admin-Token` 请求头）；Alertmanager webhook 需要
+  `WEBHOOK_API_KEYS` 中的密钥（`X-API-Key` 或 `Authorization: Bearer`）。任一配置
+  留空时对应接口返回 403 锁定，不做静默放行。
+- CORS 默认不注册（仅同源可访问）；需要跨源时用 `CORS_ALLOW_ORIGINS` 显式指定，
+  `*` 恢复旧的允许全部来源行为。公网部署仍应放在反向代理之后并叠加网络层访问控制。
 
 ## 版本说明
 

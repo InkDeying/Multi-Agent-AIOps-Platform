@@ -1467,9 +1467,13 @@ function renderIncidentDetail(task, evidence, agentRuns, toolCalls) {
             try {
                 const r = await fetch(`${API}/incidents/tasks/${encodeURIComponent(taskId)}`, {
                     method: "DELETE",
+                    headers: { "X-Admin-Token": getAdminToken() },
                 });
                 const data = await r.json().catch(() => null);
-                if (!r.ok) throw new Error(data?.detail || `HTTP ${r.status}`);
+                if (!r.ok) {
+                    clearAdminTokenOnError(r.status);
+                    throw new Error(data?.detail || `HTTP ${r.status}`);
+                }
                 incidents.selectedId = null;
                 incidents.selectedIds.delete(taskId);
                 detail.innerHTML = `<div class="text-center text-slate-400 italic py-8">事件已删除，请从左侧选择其他任务</div>`;
@@ -1560,11 +1564,14 @@ async function deleteSelectedIncidents() {
     try {
         const r = await fetch(`${API}/incidents/tasks/bulk-delete`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "X-Admin-Token": getAdminToken() },
             body: JSON.stringify({ task_ids: taskIds }),
         });
         const data = await r.json().catch(() => null);
-        if (!r.ok) throw new Error(data?.detail || `HTTP ${r.status}`);
+        if (!r.ok) {
+            clearAdminTokenOnError(r.status);
+            throw new Error(data?.detail || `HTTP ${r.status}`);
+        }
 
         const deletedIds = new Set((data?.items || []).map((item) => item.task_id));
         taskIds.forEach((taskId) => incidents.selectedIds.delete(taskId));
@@ -1735,6 +1742,24 @@ function getKbAdminToken() {
         sessionStorage.setItem(KB_ADMIN_TOKEN_KEY, token);
     }
     return token;
+}
+
+// 控制面写操作 (审批决定 / 事件删除) 的管理员 Token, 对应后端 ADMIN_TOKEN
+const ADMIN_TOKEN_KEY = "multi_agent_admin_token";
+
+function getAdminToken() {
+    let token = sessionStorage.getItem(ADMIN_TOKEN_KEY) || "";
+    if (!token) {
+        token = prompt("请输入控制面管理员 Token (服务端 ADMIN_TOKEN)") || "";
+        token = token.trim();
+        if (!token) throw new Error("未输入控制面管理员 Token");
+        sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+    }
+    return token;
+}
+
+function clearAdminTokenOnError(status) {
+    if (status === 401 || status === 403) sessionStorage.removeItem(ADMIN_TOKEN_KEY);
 }
 
 // ============================================================
@@ -2172,10 +2197,11 @@ async function decideApproval(reqId, decision) {
     try {
         const r = await fetch(`${API}/approvals/${encodeURIComponent(reqId)}/decide`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "X-Admin-Token": getAdminToken() },
             body: JSON.stringify({ decision, decided_by: "web-user", reason }),
         });
         if (!r.ok) {
+            clearAdminTokenOnError(r.status);
             const txt = await r.text().catch(() => "");
             throw new Error(`HTTP ${r.status}: ${txt.slice(0, 120)}`);
         }

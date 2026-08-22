@@ -10,10 +10,11 @@ GET /api/v1/skills/{name}
 
 from typing import Any, List
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.schemas.common import ApiResponse
+from app.api.security import require_admin_token
 from app.harness.skills import get_skill_registry, reload_skill_registry
 
 router = APIRouter(prefix="/skills", tags=["skills"])
@@ -85,6 +86,7 @@ async def list_skills() -> ApiResponse[SkillListData]:
     response_model=ApiResponse[SkillListData],
     summary="重新加载 SkillRegistry",
     description="清空进程内 SkillRegistry 缓存并重新扫描内置与外部 SKILL.md.",
+    dependencies=[Depends(require_admin_token)],
 )
 async def reload_skills() -> ApiResponse[SkillListData]:
     registry = reload_skill_registry()

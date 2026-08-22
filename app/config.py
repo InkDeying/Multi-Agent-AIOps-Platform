@@ -36,6 +36,30 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", description="监听地址")
     port: int = Field(default=9900, description="监听端口")
 
+    # ==================== API 控制面安全 ====================
+    # 约定与 KB_ADMIN_TOKEN 一致: 留空 = 接口锁定 (403), 不做静默放行.
+    admin_token: str = Field(
+        default="",
+        description=(
+            "控制面写操作 (审批决定/任务删除/Skill 重载) 管理员 Token, "
+            "请求头 X-Admin-Token; 留空则这些接口锁定"
+        ),
+    )
+    webhook_api_keys: str = Field(
+        default="",
+        description=(
+            "Alertmanager webhook 合法密钥列表 (逗号分隔), "
+            "匹配 X-API-Key 或 Authorization: Bearer; 留空则 webhook 锁定"
+        ),
+    )
+    cors_allow_origins: str = Field(
+        default="",
+        description=(
+            "CORS 允许来源 (逗号分隔), * 表示全部 (旧行为); "
+            "留空表示不注册 CORS, 浏览器仅同源可访问"
+        ),
+    )
+
     # ==================== DashScope LLM ====================
     dashscope_api_key: str = Field(default="", description="DashScope API Key")
     dashscope_base_url: str = Field(

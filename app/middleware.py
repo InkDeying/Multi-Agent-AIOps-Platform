@@ -13,6 +13,8 @@ from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
 
+from app.config import settings
+
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
     """为每个请求注入 X-Request-ID.
@@ -82,12 +84,19 @@ def setup_middlewares(app: FastAPI) -> None:
     # RequestID 中间件 (在日志之外)
     app.add_middleware(RequestIDMiddleware)
 
-    # CORS (最外层)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # 开发环境放开, 生产环境应限定具体域名
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        expose_headers=["X-Request-ID"],
-    )
+    # CORS (最外层): 未配置 CORS_ALLOW_ORIGINS 时不注册,
+    # 同源 (FastAPI 托管的前端) 不受影响, 跨源浏览器请求被拦截。
+    origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+            expose_headers=["X-Request-ID"],
+        )
+    else:
+        logger.info(
+            "CORS_ALLOW_ORIGINS 未配置, 未注册 CORS 中间件 (浏览器仅同源可访问)"
+        )

@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.api import rate_limit
+from app.api.security import require_webhook_api_key
 from app.services import incident_service, webhook_service
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
@@ -51,12 +52,14 @@ class AlertmanagerPayload(BaseModel):
     description=(
         "Accept Alertmanager v4 payloads, persist alerts and incident groups, "
         "then enqueue diagnosis tasks to Redis Streams. The request returns quickly; "
-        "diagnosis is performed by the worker process."
+        "diagnosis is performed by the worker process. "
+        "Requires an X-API-Key (or Bearer) credential matching WEBHOOK_API_KEYS."
     ),
+    dependencies=[Depends(require_webhook_api_key)],
 )
 async def alertmanager_webhook(payload: AlertmanagerPayload, request: Request) -> dict[str, Any]:
-    # 限流 (改造文档第 8 步): 单 IP/API Key 每秒 + 单来源(receiver)每分钟, 超限 429.
-    # API Key 优先取 X-API-Key 头, 没有则用 IP; source 用 Alertmanager receiver。
+    # 限流 (改造文档第 8 步): 密钥已由 require_webhook_api_key 校验,
+    # 这里把它同时用作限流身份; source 用 Alertmanager receiver。
     identity = request.headers.get("x-api-key") or rate_limit.client_ip(request)
     await rate_limit.enforce(
         "webhook_key", identity, settings.rate_limit_webhook_per_ip_per_sec, 1,

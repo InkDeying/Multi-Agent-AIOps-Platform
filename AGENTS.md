@@ -193,6 +193,12 @@ are the compact boundaries an agent must preserve while editing:
 - Tool execution must retain the Skill, permission, guardrail, approval, and
   audit boundaries. Read-only tools may be added by runtime policy; write,
   notification, and high-risk tools require explicit authorization.
+- Control-plane writes are token-gated: approval decisions, diagnosis-task
+  deletion, and Skill reload require `ADMIN_TOKEN` (`X-Admin-Token`); the
+  Alertmanager webhook requires a key from `WEBHOOK_API_KEYS` (`X-API-Key` or
+  Bearer). An empty config locks the endpoint with 403; user-facing diagnosis
+  and chat endpoints intentionally remain unauthenticated, and CORS is
+  same-origin only unless `CORS_ALLOW_ORIGINS` is set.
 - `PERMISSION_MODE=bypass` is development-only. Do not recommend it for a public
   or production deployment.
 - Retryable side effects require idempotency or an explicit uncertain-outcome
@@ -210,8 +216,9 @@ Changes in these areas require focused evidence and usually separate approval:
 
 - `.env.example` and `app/config.py`: provider selection, credentials, public
   endpoints, concurrency, and security defaults.
-- `app/harness/runtime/permissions.py`, `tool_filter.py`, `tool_runner.py`, and
-  `app/db/approvals.py`: public safety and side-effect boundaries.
+- `app/harness/runtime/permissions.py`, `tool_filter.py`, `tool_runner.py`,
+  `app/api/security.py`, and `app/db/approvals.py`: public safety and
+  side-effect boundaries.
 - `mcp_servers/docker_server.py`: contains a restart operation. Never treat every
   Docker tool as read-only.
 - `app/db/postgres.py`: schema and persistence compatibility.

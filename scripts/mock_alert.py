@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import random
 import sys
 import time
@@ -157,7 +158,7 @@ def build_payload(scenario_key: str) -> dict:
     }
 
 
-def fire_alert(base_url: str, scenario_key: str) -> None:
+def fire_alert(base_url: str, scenario_key: str, api_key: str = "") -> None:
     payload = build_payload(scenario_key)
     sc = SCENARIOS[scenario_key]
     url = f"{base_url}/api/v1/webhook/alertmanager"
@@ -171,8 +172,9 @@ def fire_alert(base_url: str, scenario_key: str) -> None:
     print(f"  -> POST {url}")
     print("-" * 70)
 
+    headers = {"X-API-Key": api_key} if api_key else {}
     try:
-        r = requests.post(url, json=payload, timeout=10)
+        r = requests.post(url, json=payload, headers=headers, timeout=10)
         if r.status_code == 200:
             data = r.json()
             accepted = data.get("accepted", [])
@@ -295,6 +297,14 @@ def main() -> None:
         action="store_true",
         help="\u6e05\u7a7a\u5386\u53f2 (\u6f14\u793a\u91cd\u542f\u7528)",
     )
+    ap.add_argument(
+        "--api-key",
+        default=os.environ.get("WEBHOOK_API_KEYS", "").split(",")[0].strip(),
+        help=(
+            "webhook \u5bc6\u94a5 (\u670d\u52a1\u7aef WEBHOOK_API_KEYS \u4e4b\u4e00); "
+            "\u9ed8\u8ba4\u53d6\u73af\u5883\u53d8\u91cf WEBHOOK_API_KEYS \u7684\u7b2c\u4e00\u4e2a\u503c"
+        ),
+    )
     args = ap.parse_args()
 
     if args.list_history:
@@ -311,13 +321,13 @@ def main() -> None:
         try:
             while True:
                 key = args.scenario or random.choice(list(SCENARIOS.keys()))
-                fire_alert(base, key)
+                fire_alert(base, key, args.api_key)
                 time.sleep(args.interval)
         except KeyboardInterrupt:
             print("\n\u9000\u51fa watch \u6a21\u5f0f")
     else:
         key = args.scenario or random.choice(list(SCENARIOS.keys()))
-        fire_alert(base, key)
+        fire_alert(base, key, args.api_key)
 
 
 if __name__ == "__main__":

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import random
 import time
 from typing import Any
@@ -156,6 +157,11 @@ async def amain() -> None:
     p.add_argument("--concurrency", type=int, default=20, help="并发数")
     p.add_argument("--timeout", type=float, default=30.0)
     p.add_argument("--severity", default="warning", help="warning/critical/... 或 'mix' 随机")
+    p.add_argument(
+        "--api-key",
+        default=os.environ.get("WEBHOOK_API_KEYS", "").split(",")[0].strip(),
+        help="webhook 密钥 (服务端 WEBHOOK_API_KEYS 之一); 默认取环境变量第一个值",
+    )
     args = p.parse_args()
 
     base = args.base_url.rstrip("/")
@@ -175,11 +181,14 @@ async def amain() -> None:
         await _run(args, make_req)
 
     elif args.mode == "webhook":
+        headers = {"X-API-Key": args.api_key} if args.api_key else {}
+
         async def make_req(cli: httpx.AsyncClient, i: int):
             sev = random.choice(SEVERITIES) if args.severity == "mix" else args.severity
             return await cli.post(
                 f"{base}/api/v1/webhook/alertmanager",
                 json=_build_alert_payload(i, sev),
+                headers=headers,
             )
         await _run(args, make_req)
 
