@@ -1003,7 +1003,7 @@ function appendChatMsg(role, content) {
 //   - 列表 + 详情两栏, 共享 incidents.items 缓存
 //   - 自动 5s 拉新; 当前选中任务还在 pending/running 时, 同步刷新详情
 //   - 详情面板组装: 概览 KV → 触发输入 → 错误 → 报告 markdown → 证据链 (按 source 分组) → Agent Runs → Tool Calls
-//   - 后端 API: 见 app/api/v1/incidents.py (tasks / tasks/{id} / .../evidence / .../agent-runs / .../tool-calls)
+//   - 后端 API: 见 app/api/incidents.py (tasks / tasks/{id} / .../evidence / .../agent-runs / .../tool-calls)
 //   - 后端不可用时 (Postgres 未就绪等) 优雅降级, 不打断其他 Tab.
 
 const incidents = {

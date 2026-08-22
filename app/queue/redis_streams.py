@@ -14,16 +14,10 @@ PRIORITY_LEVELS = ["critical", "high", "normal", "low"]
 
 
 def level_for_severity(severity: str) -> str:
-    """把告警 severity 映射到队列优先级 level (改造文档第 4 步规则)。"""
-    s = str(severity or "").lower().strip()
-    if s in {"critical", "page", "p0"}:
-        return "critical"
-    if s in {"high", "p1"}:
-        return "high"
-    if s in {"info", "low", "p3"}:
-        return "low"
-    # warning / p2 / 未知 → normal (手动诊断默认级别)
-    return "normal"
+    """把告警 severity 映射到队列优先级 level; 分级口径见 app/common/severity.py."""
+    from app.common.severity import LEVEL_FOR_TIER, severity_tier
+
+    return LEVEL_FOR_TIER[severity_tier(severity)]
 
 
 def level_for_priority(priority: int) -> str:

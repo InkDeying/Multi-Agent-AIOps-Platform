@@ -40,7 +40,7 @@ class PlanExecuteState(TypedDict, total=False):
         requested_diagnosis_mode: 前端/队列请求的模式, deep 先作为多 Agent 组诊断入口预留
         selected_skill:  Skill Router 选中的 skill name (snake_case)
         skill_reason:    Router 选择该 Skill 的一句话理由 (可观测/调试用)
-        alert_signature: 同类问题指纹 (app/reflection/signature.py)。由持有结构化
+        alert_signature: 同类问题指纹 (app/incidents/signature.py)。由持有结构化
                          payload 的 runner 算好透传, 供 skill_router 召回历史经验回灌。
                          手动诊断无结构化告警时为空, skill_router 退化用 input 近似。
         wiki_context:    编排层预加载的 LLM Wiki 召回块 (read-index-first, best-effort)。

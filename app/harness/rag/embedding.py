@@ -122,4 +122,7 @@ def get_embeddings() -> Embeddings:
         # DashScope text-embedding-v4 单次最多 10 个文本, 超过会 400.
         # OpenAIEmbeddings 默认 chunk_size=2048 会把所有文本一次发出去, 必须降到 10.
         chunk_size=10,
+        # 不配 timeout 时 openai 客户端默认 600s + 自动重试, 一次卡顿能挂住检索链路
+        timeout=60.0,
+        max_retries=1,
     )

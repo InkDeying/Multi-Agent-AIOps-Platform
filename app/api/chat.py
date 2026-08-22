@@ -9,12 +9,14 @@ POST /api/v1/chat/stream
 import json
 from typing import AsyncIterator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from loguru import logger
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 import app.services.rag_service as rag_service
+from app.config import settings
+from app.api import rate_limit
 from app.services import chat_session_service
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -65,7 +67,13 @@ class ChatRequest(BaseModel):
         "```"
     ),
 )
-async def chat_stream(req: ChatRequest) -> EventSourceResponse:
+async def chat_stream(req: ChatRequest, request: Request) -> EventSourceResponse:
+    # 限流: 聊天触发真实 LLM + 检索 (可能还有联网), 与手动诊断同量级成本;
+    # 独立计数桶, 避免刷聊天耗尽诊断配额。
+    await rate_limit.enforce(
+        "chat", rate_limit.client_ip(request),
+        settings.rate_limit_manual_per_ip_per_min, 60,
+    )
     logger.info(f"[chat] session={req.session_id}, q={req.question[:60]}...")
 
     async def event_generator() -> AsyncIterator[dict]:

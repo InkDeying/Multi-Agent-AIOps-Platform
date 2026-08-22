@@ -183,8 +183,11 @@ class ApprovalRepository:
                             """,
                             req_id,
                         )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        f"[approvals] mark {req_id} timeout failed: {exc}; "
+                        "DB 状态与工具返回可能不一致"
+                    )
                 return "timeout"
             await asyncio.sleep(interval)
 

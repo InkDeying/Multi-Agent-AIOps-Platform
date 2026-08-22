@@ -23,7 +23,7 @@ async def submit(
 ) -> dict[str, Any]:
     try:
         diagnosis_mode = DiagnosisMode(mode.lower().strip())
-    except Exception:
+    except ValueError:  # 未知模式降级 FAST; 不裸捕获, 避免掩盖其他 bug
         diagnosis_mode = DiagnosisMode.FAST
 
     result = await incident_repository.create_manual_task(

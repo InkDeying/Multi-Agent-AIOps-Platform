@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 REPORTS_DIR = Path(__file__).resolve().parents[2] / "benchmark" / "reports"
 MERGED_REPORTS_FILE = REPORTS_DIR / "merged_reports.json"
 _FILENAME_RE = re.compile(r"^(?P<mode>[a-z_]+)_(?P<ts>\d{8}-\d{6})\.json$")
@@ -28,7 +30,8 @@ def list_reports(limit: int, mode: str | None) -> dict[str, Any]:
             continue
         try:
             payloads[path.name] = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
+            logger.warning(f"[eval] 报告文件损坏已跳过: {path.name}: {exc}")
             continue
 
     items: list[dict[str, Any]] = []
@@ -152,7 +155,7 @@ def _load_merged_reports() -> dict[str, dict[str, Any]]:
 
 
 def _validate_filename(name: str) -> None:
-    if "/" in name or "\\" in name or ".." in name:
+    if "/" in name or "\\" in name or ".." in name or ":" in name:
         raise ValueError("非法文件名")
 
 
@@ -160,7 +163,7 @@ def _parse_ts(ts: str) -> str:
     try:
         return datetime.strptime(ts, "%Y%m%d-%H%M%S").isoformat()
     except Exception:
-        return ts
+        return ts  # 非 benchmark 命名的时间戳原样返回
 
 
 def _summarize(payload: dict[str, Any]) -> dict[str, Any]:

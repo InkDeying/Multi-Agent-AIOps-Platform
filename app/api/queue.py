@@ -6,6 +6,8 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from loguru import logger
+
 from app.config import settings
 from app.queue.redis_streams import incident_queue
 
@@ -38,6 +40,8 @@ async def get_queue_status() -> dict[str, Any]:
                 "limit": settings.worker_diagnosis_concurrency,
             },
         }
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            f"[queue-status] limiter slot usage unavailable: {type(exc).__name__}: {exc}"
+        )
     return status

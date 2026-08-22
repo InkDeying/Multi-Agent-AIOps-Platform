@@ -9,7 +9,7 @@ Parent-Child 流程:
   3. 用 parent_content 拼 context 返回 (而不是 child page_content) → LLM 拿到完整段落
 
 为什么这么做: child 小利于 embedding 命中, parent 大利于 LLM 推理。
-参考腾讯 WeKnora 的 parent-child chunking 设计 (app/utils/splitter.py)。
+参考腾讯 WeKnora 的 parent-child chunking 设计 (app/harness/rag/splitter.py)。
 """
 
 from typing import Any

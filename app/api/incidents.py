@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.config import settings
+from app.api import rate_limit
 from app.api.security import require_admin_token
 from app.services import incident_service
 
@@ -102,14 +104,21 @@ async def list_task_evidence(task_id: str, limit: int = 100) -> dict[str, Any]:
 
 
 @router.post("/from_chat", summary="把一次聊天升级为诊断事件")
-async def create_incident_from_chat(req: FromChatRequest) -> dict[str, Any]:
+async def create_incident_from_chat(req: FromChatRequest, request: Request) -> dict[str, Any]:
     """打通 Chat ↔ Incident 的孤岛: 用户在 RAG 聊天里发现真问题时一键升级.
+
+    与 /aiops/diagnose/submit 同一限流口径 (创建 worker 诊断任务的成本同类):
+    单 IP 每分钟上限, 超限 429。
 
     行为:
       1. 调 IncidentRepository.create_manual_task 写入事实表 (alerts / incident_groups / incidents / diagnosis_tasks)
       2. 若 incident_pipeline_enabled, 把任务推入 Redis Stream 让 Worker 接管异步诊断
       3. 返回 task_id / incident_group_id, 前端跳到事件中心 + 选中
     """
+    await rate_limit.enforce(
+        "manual", rate_limit.client_ip(request),
+        settings.rate_limit_manual_per_ip_per_min, 60,
+    )
     try:
         return await incident_service.create_incident_from_chat(
             session_id=req.session_id,

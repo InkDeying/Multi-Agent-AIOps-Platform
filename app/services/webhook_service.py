@@ -9,6 +9,11 @@ from typing import Any
 
 from loguru import logger
 
+from app.common.severity import (
+    PRIORITY_FOR_TIER,
+    TIER_DEEP_DIAGNOSIS,
+    severity_tier,
+)
 from app.incidents.dispatch import dispatch_diagnosis_task
 from app.incidents.models import DiagnosisMode
 from app.incidents.repository import incident_repository
@@ -45,9 +50,9 @@ def format_alert_as_query(alert: Any) -> str:
 
 
 def diagnosis_mode_for(payload: Any, alert: Any) -> DiagnosisMode:
-    """按严重等级或告警数量选择 fast/deep."""
-    severity = str(alert.labels.get("severity", "")).lower()
-    if severity in {"critical", "page", "p0", "p1"}:
+    """按严重等级或告警数量选择 fast/deep; 分级口径见 app/common/severity.py."""
+    tier = severity_tier(str(alert.labels.get("severity", "")))
+    if tier in TIER_DEEP_DIAGNOSIS:
         return DiagnosisMode.DEEP
     if len(payload.alerts) >= 10:
         return DiagnosisMode.DEEP
@@ -55,13 +60,9 @@ def diagnosis_mode_for(payload: Any, alert: Any) -> DiagnosisMode:
 
 
 def priority_for(alert: Any) -> int:
-    """按严重等级映射队列优先级."""
-    severity = str(alert.labels.get("severity", "")).lower()
-    if severity in {"critical", "page", "p0"}:
-        return 10
-    if severity in {"warning", "p1", "p2"}:
-        return 50
-    return 100
+    """按严重等级映射队列优先级; 分级口径见 app/common/severity.py."""
+    tier = severity_tier(str(alert.labels.get("severity", "")))
+    return PRIORITY_FOR_TIER[tier]
 
 
 async def process_alertmanager_payload(payload: Any) -> dict[str, Any]:

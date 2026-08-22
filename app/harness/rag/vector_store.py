@@ -15,6 +15,7 @@
   每一层都可通过 settings 开关; 任一环节失败都自动降级到上一层结果.
 """
 
+import asyncio
 from functools import lru_cache
 from typing import Any, List, Optional
 
@@ -151,7 +152,10 @@ async def advanced_search(
         retrieve_k = final_k
 
     # ---------- Step 1: 向量粗排 ----------
-    vector_docs = safe_similarity_search(query, k=retrieve_k, filter=filter)
+    # 同步调用 (embedding HTTP + Milvus gRPC) 会让整个事件循环冻结, 挪到线程池
+    vector_docs = await asyncio.to_thread(
+        safe_similarity_search, query, k=retrieve_k, filter=filter
+    )
     if not vector_docs:
         return []
 

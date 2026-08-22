@@ -73,7 +73,7 @@ async def create_incident_from_chat(
 ) -> dict[str, Any]:
     try:
         mode = DiagnosisMode(diagnosis_mode.lower().strip())
-    except Exception:
+    except ValueError:  # 未知模式降级 FAST; 不裸捕获, 避免掩盖其他 bug
         mode = DiagnosisMode.FAST
 
     context: dict[str, Any] = {"session_id": session_id}
