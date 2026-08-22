@@ -312,6 +312,13 @@ X-API-Key: your-webhook-key              # webhook (或 Authorization: Bearer)
   留空时对应接口返回 403 锁定，不做静默放行。
 - CORS 默认不注册（仅同源可访问）；需要跨源时用 `CORS_ALLOW_ORIGINS` 显式指定，
   `*` 恢复旧的允许全部来源行为。公网部署仍应放在反向代理之后并叠加网络层访问控制。
+- `docker-compose.yml` 的所有宿主机端口默认只绑定 `127.0.0.1`（含 Postgres/Redis/
+  Milvus/Attu/MinIO/MCP 服务），局域网默认不可达；容器之间仍走内部网络互通。
+  需要从其他机器访问时自行改为 `0.0.0.0` 并配好防火墙与认证。
+- RAG 聊天联网搜索为两层准入：命中 `RAG_CHAT_WEB_SEARCH_KEYWORDS` 配置词放行；
+  其余查询要求术语出现在历史诊断报告中，未引用的内部实体不会外发。
+- network MCP 对目标主机做"解析后复判"：域名解析到内网/回环/链路本地/保留地址
+  （含 IPv6 与十六进制/整数编码形式）一律拒绝，且不跟随 HTTP 重定向。
 
 ## 版本说明
 

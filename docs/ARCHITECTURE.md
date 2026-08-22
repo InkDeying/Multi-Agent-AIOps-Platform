@@ -262,10 +262,15 @@ API 和 Worker 使用同一个 Python 镜像，通过 Compose Command 区分角�
 - CORS 默认不注册（仅同源）；跨源需求通过 `CORS_ALLOW_ORIGINS` 显式开启，`*`
   恢复旧的允许全部来源行为，仅建议本地调试使用。
 - 控制面写操作有 Token 门禁：审批决定、诊断任务删除、Skill 重载要求
-  `ADMIN_TOKEN`（`X-Admin-Token`）；Alertmanager webhook 要求 `WEBHOOK_API_KEYS`
-  中的密钥（`X-API-Key` 或 `Authorization: Bearer`）。配置留空时接口 403 锁定。
+  `ADMIN_TOKEN`（`X-Admin-Token`）；知识库上传/删除要求 `KB_ADMIN_TOKEN`
+  （`X-KB-Admin-Token`）；Alertmanager webhook 要求 `WEBHOOK_API_KEYS`
+  中的密钥（`X-API-Key` 或 `Authorization: Bearer`）。配置留空时接口 403 锁定，
+  `.env.example` 的令牌留空，部署时必须填入自己的随机值。
   同步 SSE 诊断、手动提交与聊天升级等用户功能端点仍无认证，公网部署需反向代理
   与网络层访问控制兜底。
+- RAG 聊天的联网搜索是两层准入：命中 `RAG_CHAT_WEB_SEARCH_KEYWORDS`（管理员
+  显式配置）放行；其余查询要求术语出现在历史诊断报告/会话摘要中（white-list
+  by reference），未引用实体不出境。
 - 限流在 Redis 故障时 fail-open，这是可用性优先的明确取舍，不等同于安全网关。
 - 缺少用户认证、多租户隔离和细粒度数据授权（控制面 Token 是共享密钥，不是身份体系）。
 - `requirements.txt` 使用范围依赖而非完整锁文件，部署复现性受上游发布影响。
