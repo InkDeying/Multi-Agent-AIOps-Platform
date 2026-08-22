@@ -69,7 +69,7 @@ async def run_legacy_langgraph_with_audit(task_id: str, item: dict[str, Any]) ->
     if not incident_group_id or not incident_id:
         raise ValueError("diagnosis task missing incident ids")
 
-    # 算告警指纹透传进 graph state, 供 LLM Wiki recall_block 做直达页查找
+    # 算告警指纹透传进 graph state, 供编排层预加载 Wiki 召回时做直达页查找
     # (services/<service>.md, patterns/<sig>.md)。指纹取持久化 task.payload
     # (含 _extract_service 提取的 service) 而非 _extract_payload 取到的队列消息
     # payload (后者缺 service 字段)。

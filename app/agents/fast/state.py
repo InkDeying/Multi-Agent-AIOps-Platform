@@ -43,6 +43,9 @@ class PlanExecuteState(TypedDict, total=False):
         alert_signature: 同类问题指纹 (app/reflection/signature.py)。由持有结构化
                          payload 的 runner 算好透传, 供 skill_router 召回历史经验回灌。
                          手动诊断无结构化告警时为空, skill_router 退化用 input 近似。
+        wiki_context:    编排层预加载的 LLM Wiki 召回块 (read-index-first, best-effort)。
+                         节点只消费, 不得自行读 wiki 文件 (与 deep 图同一规则:
+                         节点不做 IO, 事实与经验由编排层注入)。
         plan:            待执行的步骤列表 (Replanner 会更新)
         past_steps:      已执行的 (步骤, 结果) 元组列表 (用 operator.add 累加)
         response:        最终响应 (Replanner 决定终止时填充, 触发 END)
@@ -57,6 +60,7 @@ class PlanExecuteState(TypedDict, total=False):
     diagnosis_mode: str
     requested_diagnosis_mode: str
     alert_signature: str
+    wiki_context: str
     selected_skill: str
     skill_reason: str
     plan: List[str]

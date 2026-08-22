@@ -156,6 +156,30 @@ class DiagnosisContractTests(unittest.TestCase):
             self.assertNotIn("app.incidents.repository", source)
             self.assertNotIn("app.harness.wiki.store", source)
 
+    def test_fast_nodes_do_not_import_persistence_or_wiki(self) -> None:
+        """fast 图与 deep 同规则: 节点只消费注入 State, 不读 wiki/持久层。
+
+        背景: skill_router 曾直接 import recall_block 在节点内读 wiki 文件,
+        deep 收口后 fast 被漏掉; 本测试防止再次回流。
+        """
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[1]
+        node_files = sorted((repo_root / "app" / "agents" / "fast").rglob("*.py"))
+        self.assertTrue(node_files)  # 目录扫描本身失败要显式红灯
+        for path in node_files:
+            source = path.read_text(encoding="utf-8")
+            for forbidden in (
+                "app.harness.wiki",
+                "app.incidents.repository",
+                "app.db.",
+                "app.queue.",
+            ):
+                with self.subTest(
+                    path=str(path.relative_to(repo_root)), import_=forbidden
+                ):
+                    self.assertNotIn(forbidden, source)
+
     def test_report_hook_failure_does_not_break_diagnosis_flow(self) -> None:
         async def failing_hook(_session_id: str, _event: dict) -> None:
             raise RuntimeError("cache unavailable")

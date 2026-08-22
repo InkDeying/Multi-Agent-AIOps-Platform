@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 from app.agents.fast.state import PlanExecuteState
 from app.harness.core.llm import get_chat_llm
 from app.harness.core.structured import ainvoke_structured
-from app.harness.wiki.store import recall_block
 from app.harness.runtime.agent_harness import get_agent_harness
 from app.harness.runtime.transitions import (
     ROUTER_FALLBACK_GENERIC,
@@ -110,10 +109,9 @@ async def skill_router_node(state: PlanExecuteState) -> PlanExecuteState:
     harness = get_agent_harness()
     router_model = harness.router_model()
     llm = get_chat_llm(model=router_model, temperature=0, timeout=30, max_retries=1)
-    # 经验回灌: 从 LLM Wiki 召回相关页注入 router prompt (read-index-first, best-effort)。
-    lessons = await recall_block(
-        query=user_input, signature=str(state.get("alert_signature") or ""),
-    )
+    # 经验回灌: 消费编排层预加载进 State 的 Wiki 召回块 (read-index-first, best-effort)。
+    # 节点不做 IO —— 与 deep 图同一规则, 空串表示无召回, 不影响路由。
+    lessons = str(state.get("wiki_context") or "")
     # 回灌可观测性: 命中时记一条 transition, 让"用没用回灌、注入了几页"进结构化事件流
     # (diagnosis_runner 会把 transition_history 转成 transition 事件)。无命中则 None。
     recall_count = sum(1 for ln in lessons.splitlines() if ln.startswith("### ")) if lessons else 0

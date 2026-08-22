@@ -191,6 +191,14 @@ async def run_diagnosis_graph(
                 alert_signature=alert_signature,
             )
         )
+    else:
+        # fast 图与 deep 同一规则: Wiki 经验由编排层预加载注入 State,
+        # 节点 (skill_router) 只消费, 不自行读文件 (best-effort, 空串不影响诊断)。
+        from app.harness.wiki.store import recall_block
+
+        graph_input["wiki_context"] = await recall_block(
+            query=query, signature=alert_signature
+        )
     final_report = ""  # 经验 Wiki 写钩子用: 捕获本次诊断产出的最终报告文本
 
     async def _graph_runner() -> None:
