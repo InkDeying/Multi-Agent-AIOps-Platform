@@ -18,6 +18,7 @@ from starlette.middleware.cors import CORSMiddleware
 from app.api.security import (
     parse_webhook_api_keys,
     require_admin_token,
+    require_kb_admin_token,
     require_webhook_api_key,
 )
 
@@ -51,6 +52,44 @@ class AdminTokenGateTests(unittest.TestCase):
             self.assertIsNone(
                 require_admin_token(x_admin_token="s3cret")
             )
+
+
+class KbAdminTokenGateTests(unittest.TestCase):
+    """知识库门禁与控制面门禁共享同一实现 (security._require_token)。"""
+
+    def test_locked_when_kb_token_unconfigured(self) -> None:
+        with mock.patch("app.api.security.settings") as settings:
+            settings.kb_admin_token = ""
+            with self.assertRaises(HTTPException) as ctx:
+                require_kb_admin_token(x_kb_admin_token="whatever")
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("KB_ADMIN_TOKEN", str(ctx.exception.detail))
+
+    def test_rejects_wrong_or_missing_kb_token(self) -> None:
+        with mock.patch("app.api.security.settings") as settings:
+            settings.kb_admin_token = "s3cret"
+            for provided in ("wrong", ""):
+                with self.subTest(provided=provided):
+                    with self.assertRaises(HTTPException) as ctx:
+                        require_kb_admin_token(x_kb_admin_token=provided)
+                    self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_accepts_matching_kb_token(self) -> None:
+        with mock.patch("app.api.security.settings") as settings:
+            settings.kb_admin_token = "s3cret"
+            self.assertIsNone(
+                require_kb_admin_token(x_kb_admin_token="s3cret")
+            )
+
+    def test_both_gates_are_independent(self) -> None:
+        """ADMIN_TOKEN 与 KB_ADMIN_TOKEN 是独立门禁: 一个配置不影响另一个。"""
+        with mock.patch("app.api.security.settings") as settings:
+            settings.admin_token = "admin-only"
+            settings.kb_admin_token = ""
+            # 控制面门禁可用, 知识库门禁锁定
+            self.assertIsNone(require_admin_token(x_admin_token="admin-only"))
+            with self.assertRaises(HTTPException):
+                require_kb_admin_token(x_kb_admin_token="admin-only")
 
 
 class WebhookApiKeyGateTests(unittest.TestCase):
