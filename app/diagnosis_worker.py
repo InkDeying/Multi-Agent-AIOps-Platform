@@ -68,24 +68,38 @@ class DiagnosisWorker:
         logger.info(f"[diagnosis-worker] started consumer={self.consumer_name}")
 
         while not self._stopping.is_set():
-            # 先补偿 "落库但从未入队" 的幽灵任务, 再回收 stale pending, 再读新任务。
-            # 为什么放在这里:
-            # - XAUTOCLAIM 只能回收已投递未 ACK 的消息, 覆盖不到 XADD 从未成功的任务;
-            # - 补偿以 Postgres 事实为准, 每个补偿周期扫一次, 宽限期避开在途投递。
-            await self._requeue_unqueued_once()
-            # 普通XREADGROUP 只读新消息, 不会自动处理崩溃 Worker 留下的 pending;
-            # 每轮先 reclaim, 可以让旧任务恢复执行。
-            tasks = await self._claim_stale_tasks_once()
-            if not tasks:
-                tasks = await incident_queue.read_tasks(
-                    consumer_name=self.consumer_name,
-                    count=1,
-                    block_ms=settings.diagnosis_worker_block_ms,
+            try:
+                await self._poll_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # 一轮失败 (常见: Postgres/Redis 短暂故障、毒消息处理路径异常)
+                # 不杀死进程: 未 ACK 消息留在 PEL 由 XAUTOCLAIM 兜底, 稍后重试。
+                logger.exception(
+                    f"[diagnosis-worker] poll iteration failed: {exc}; retry in 5s"
                 )
-            if not tasks:
-                continue
-            for message_id, item in tasks:
-                await self.handle_message(message_id, item)
+                await asyncio.sleep(5)
+
+    async def _poll_once(self) -> None:
+        """一轮消费: 补偿幽灵任务 → 回收 stale pending → 读新消息 → 逐条处理。"""
+        # 先补偿 "落库但从未入队" 的幽灵任务, 再回收 stale pending, 再读新任务。
+        # 为什么放在这里:
+        # - XAUTOCLAIM 只能回收已投递未 ACK 的消息, 覆盖不到 XADD 从未成功的任务;
+        # - 补偿以 Postgres 事实为准, 每个补偿周期扫一次, 宽限期避开在途投递。
+        await self._requeue_unqueued_once()
+        # 普通 XREADGROUP 只读新消息, 不会自动处理崩溃 Worker 留下的 pending;
+        # 每轮先 reclaim, 可以让旧任务恢复执行。
+        tasks = await self._claim_stale_tasks_once()
+        if not tasks:
+            tasks = await incident_queue.read_tasks(
+                consumer_name=self.consumer_name,
+                count=1,
+                block_ms=settings.diagnosis_worker_block_ms,
+            )
+        if not tasks:
+            return
+        for message_id, item in tasks:
+            await self.handle_message(message_id, item)
 
     async def stop(self) -> None:
         self._stopping.set()
@@ -140,7 +154,19 @@ class DiagnosisWorker:
 
         logger.info(f"[diagnosis-worker] task={task_id} message={message_id} running")
         try:
-            await incident_repository.mark_task_running(task_id)
+            # 认领执行权: pending (正常) 或 running 且上一轮已崩溃超过任务时长
+            # (XAUTOCLAIM 重投接管)。并发双消息的第二条会认领失败 → ACK 丢弃,
+            # 防止同一任务被重复执行。
+            claimed = await incident_repository.mark_task_running(
+                task_id, reclaim_after_sec=settings.diagnosis_task_timeout_sec
+            )
+            if not claimed:
+                logger.info(
+                    f"[diagnosis-worker] task={task_id} not claimable "
+                    "(duplicate in-flight or terminal), ack duplicate"
+                )
+                await incident_queue.ack(message_id, stream=item.get("__stream__"))
+                return
             # 为什么加 timeout:
             # - LLM/MCP/网络工具都有可能长时间不返回;
             # - 没有 timeout 时, 一个坏任务会永久占住 Worker;
@@ -189,6 +215,24 @@ class DiagnosisWorker:
         logger.exception(f"[diagnosis-worker] task={task_id} failed: {error}")
 
         task = await incident_repository.get_task(task_id)
+        if str((task or {}).get("status") or "") == "succeeded":
+            # 诊断其实已成功 (mark_task_succeeded 已落库), 失败的只是之后的
+            # ACK —— 补 ACK 即可, 绝不能把已产出报告的任务打回 pending 重跑。
+            try:
+                await incident_queue.ack(message_id, stream=item.get("__stream__"))
+                logger.warning(
+                    f"[diagnosis-worker] task={task_id} already succeeded, ack retried"
+                )
+                return
+            except Exception as ack_exc:
+                # 补 ACK 也失败: 消息留在 PEL, 由 XAUTOCLAIM 兜底 (入口的
+                # succeeded 幂等检查会直接 ACK 重复投递, 不会重复执行)。
+                logger.warning(
+                    f"[diagnosis-worker] task={task_id} already succeeded but ack "
+                    f"failed again ({ack_exc}); left for XAUTOCLAIM"
+                )
+                return
+
         attempts = int((task or {}).get("attempts") or 0)
         max_attempts = int((task or {}).get("max_attempts") or settings.diagnosis_task_max_attempts)
 

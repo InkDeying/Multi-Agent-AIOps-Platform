@@ -115,9 +115,19 @@ def partition_tool_calls(
 # 单工具执行 (含截断 + 异常隔离)
 # ============================================================
 async def _invoke_tool(tool: BaseTool, args: Dict[str, Any]) -> str:
-    """统一调用接口: 优先 ainvoke (异步), 回退 invoke (同步)."""
+    """统一调用接口: 优先 ainvoke (异步, 带超时), 回退 invoke (同步).
+
+    超时动机: API/SSE 路径 (同步诊断 / RAG 聊天) 没有像 Worker 那样的整任务
+    wait_for 兜底, 一个挂死的 MCP server 会让请求永久挂起; Worker 路径的
+    整任务超时 (diagnosis_task_timeout_sec) 应大于这里的单工具超时。
+    同步 invoke 会阻塞事件循环、无法用 wait_for 打断, 只对异步路径生效。
+    """
+    from app.config import settings as _settings  # 延迟导入避免循环
+
     if hasattr(tool, "ainvoke"):
-        result = await tool.ainvoke(args)
+        result = await asyncio.wait_for(
+            tool.ainvoke(args), timeout=_settings.mcp_tool_timeout_sec
+        )
     else:
         result = tool.invoke(args)
     return result if isinstance(result, str) else str(result)

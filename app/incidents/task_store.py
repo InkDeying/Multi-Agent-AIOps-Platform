@@ -92,24 +92,36 @@ class TaskStoreMixin:
         )
         return returned_id, task_created, needs_enqueue
 
-    async def claim_task_enqueue(self, task_id: str) -> bool:
+    async def claim_task_enqueue(self, task_id: str, *, stale_claim_sec: int = 0) -> bool:
         """原子地认领一个任务的入队权, 防止并发投递产生重复消息.
 
-        只有 status='pending' 且 queue_message_id 为空的任务能被认领;
+        默认只有 status='pending' 且 queue_message_id 为空的任务能被认领;
         认领即写入占位标记 (见 ENQUEUE_CLAIM_MARKER), 竞争方 UPDATE 影响 0 行。
+
+        stale_claim_sec > 0 时, 额外允许认领 "占位标记停留超过该秒数" 的行:
+        覆盖 release 失败或进程在占位后崩溃的情况, 否则这类行会被补偿扫描
+        列出却永远无法重认领 (任务永久 pending)。宽限期由补偿扫描方传入,
+        与 list_unqueued_pending_tasks 的宽限参数保持一致, 避免抢走新鲜占位。
         """
+        marker_reclaim = ""
+        params: list[Any] = [task_id, ENQUEUE_CLAIM_MARKER]
+        if stale_claim_sec > 0:
+            marker_reclaim = (
+                " OR (queue_message_id = $3"
+                " AND updated_at < now() - make_interval(secs => $4))"
+            )
+            params += [ENQUEUE_CLAIM_MARKER, int(stale_claim_sec)]
         async with acquire() as conn:
             row = await conn.fetchrow(
-                """
+                f"""
                 UPDATE diagnosis_tasks
                 SET queue_message_id = $2, updated_at = now()
                 WHERE id = $1
                   AND status = 'pending'
-                  AND (queue_message_id IS NULL OR queue_message_id = '')
+                  AND (queue_message_id IS NULL OR queue_message_id = ''{marker_reclaim})
                 RETURNING id
                 """,
-                task_id,
-                ENQUEUE_CLAIM_MARKER,
+                *params,
             )
         return row is not None
 
@@ -172,9 +184,16 @@ class TaskStoreMixin:
                 message_id,
             )
 
-    async def mark_task_running(self, task_id: str) -> None:
+    async def mark_task_running(self, task_id: str, *, reclaim_after_sec: int = 0) -> bool:
+        """置 running 并 +1 attempts, 返回是否真正认领到执行权.
+
+        认领条件: status='pending'; 或 status='running' 且 claimed_at 早于
+        reclaim_after_sec —— 那意味着上一轮执行已崩溃 (claimed_at 超过任务
+        最长运行时间), 由 XAUTOCLAIM 重投的消息可以接管重跑。
+        并发双消息时第二条认领失败, 调用方 ACK 丢弃, 防止同一任务重复执行。
+        """
         async with acquire() as conn:
-            await conn.execute(
+            row = await conn.fetchrow(
                 """
                 UPDATE diagnosis_tasks
                 SET status = 'running',
@@ -183,9 +202,17 @@ class TaskStoreMixin:
                     updated_at = now(),
                     error = ''
                 WHERE id = $1
+                  AND (
+                      status = 'pending'
+                      OR (status = 'running'
+                          AND claimed_at < now() - make_interval(secs => $2))
+                  )
+                RETURNING id
                 """,
                 task_id,
+                int(reclaim_after_sec),
             )
+        return row is not None
 
     async def mark_task_succeeded(
         self,

@@ -417,6 +417,14 @@ class Settings(BaseSettings):
     mcp_system_transport: str = Field(
         default="streamable-http", description="本机系统 MCP 传输"
     )
+    mcp_tool_timeout_sec: int = Field(
+        default=120,
+        description=(
+            "单个工具调用的超时秒数 (应小于 diagnosis_task_timeout_sec)。"
+            "API/SSE 路径没有整任务超时兜底, 靠它防住挂死的 MCP server; "
+            "仅对异步工具生效。"
+        ),
+    )
     mcp_system_url: str = Field(
         default="http://localhost:9105/mcp", description="本机系统 MCP URL (psutil)"
     )

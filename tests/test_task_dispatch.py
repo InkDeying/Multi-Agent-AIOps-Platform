@@ -97,6 +97,47 @@ class DispatchProtocolTests(unittest.TestCase):
         repo.release_task_enqueue_claim.assert_awaited_once_with("task-1")
         repo.set_task_queue_message.assert_not_awaited()
 
+    def test_writeback_failure_still_returns_message_id(self) -> None:
+        """XADD 成功但回写 message id 失败: 消息在队列里, 不能向上抛 (worker 会中断)。"""
+        repo, queue = mock.AsyncMock(), mock.AsyncMock()
+        repo.claim_task_enqueue.return_value = True
+        queue.enqueue_task.return_value = "m-1"
+        repo.set_task_queue_message.side_effect = RuntimeError("pg blip")
+        with mock.patch.object(dispatch_module, "incident_repository", repo), \
+                mock.patch.object(dispatch_module, "incident_queue", queue):
+            result = asyncio.run(
+                dispatch_diagnosis_task(
+                    task_id="task-1",
+                    incident_group_id="ig-1",
+                    incident_id="inc-1",
+                    diagnosis_mode="fast",
+                    priority=100,
+                    payload={},
+                )
+            )
+        self.assertEqual(result, "m-1")
+
+    def test_stale_claim_sec_passthrough(self) -> None:
+        """补偿扫描路径必须把宽限期传给 claim, 否则标记行永远无法重认领。"""
+        repo, queue = mock.AsyncMock(), mock.AsyncMock()
+        repo.claim_task_enqueue.return_value = False
+        with mock.patch.object(dispatch_module, "incident_repository", repo), \
+                mock.patch.object(dispatch_module, "incident_queue", queue):
+            asyncio.run(
+                dispatch_diagnosis_task(
+                    task_id="task-1",
+                    incident_group_id="ig-1",
+                    incident_id="inc-1",
+                    diagnosis_mode="fast",
+                    priority=100,
+                    payload={},
+                    stale_claim_sec=60,
+                )
+            )
+        repo.claim_task_enqueue.assert_awaited_once_with(
+            "task-1", stale_claim_sec=60
+        )
+
 
 class RequeueScanTests(unittest.TestCase):
     def _row(self, task_id: str) -> dict:
@@ -275,6 +316,66 @@ class WebhookServiceTests(unittest.TestCase):
 
 
 class WorkerRequeueGuardTests(unittest.TestCase):
+    def test_handle_message_acks_duplicate_when_claim_fails(self) -> None:
+        """并发双消息的第二条认领失败: ACK 丢弃, 不重复执行诊断。"""
+        import app.diagnosis_worker as worker_module
+        from app.diagnosis_worker import DiagnosisWorker
+
+        worker = DiagnosisWorker(consumer_name="test")
+        repo, queue = mock.AsyncMock(), mock.AsyncMock()
+        repo.get_task.return_value = {"status": "running", "attempts": 1}
+        repo.mark_task_running.return_value = False
+        audit = mock.AsyncMock()
+        with mock.patch.object(worker_module, "incident_repository", repo), \
+                mock.patch.object(worker_module, "incident_queue", queue), \
+                mock.patch.object(
+                    worker_module, "run_legacy_langgraph_with_audit", audit
+                ):
+            asyncio.run(
+                worker.handle_message(
+                    "msg-1", {"task_id": "task-1", "__stream__": "s"}
+                )
+            )
+        audit.assert_not_awaited()
+        queue.ack.assert_awaited_once()
+
+    def test_handle_failure_does_not_rerun_succeeded_task(self) -> None:
+        """诊断已成功、仅 ACK 失败: 必须补 ACK 而不是打回 pending 重跑。"""
+        import app.diagnosis_worker as worker_module
+        from app.diagnosis_worker import DiagnosisWorker
+
+        worker = DiagnosisWorker(consumer_name="test")
+        repo, queue = mock.AsyncMock(), mock.AsyncMock()
+        repo.get_task.return_value = {"status": "succeeded", "attempts": 1}
+        with mock.patch.object(worker_module, "incident_repository", repo), \
+                mock.patch.object(worker_module, "incident_queue", queue):
+            asyncio.run(
+                worker._handle_failure(
+                    "msg-1", {"task_id": "task-1", "__stream__": "s"}, "task-1",
+                    RuntimeError("ack failed after success"),
+                )
+            )
+        repo.mark_task_retry_pending.assert_not_awaited()
+        repo.mark_task_failed.assert_not_awaited()
+        queue.ack.assert_awaited_once()
+
+    def test_handle_failure_ack_retry_failure_leaves_for_xautoclaim(self) -> None:
+        import app.diagnosis_worker as worker_module
+        from app.diagnosis_worker import DiagnosisWorker
+
+        worker = DiagnosisWorker(consumer_name="test")
+        repo, queue = mock.AsyncMock(), mock.AsyncMock()
+        repo.get_task.return_value = {"status": "succeeded", "attempts": 1}
+        queue.ack.side_effect = RuntimeError("redis still down")
+        with mock.patch.object(worker_module, "incident_repository", repo), \
+                mock.patch.object(worker_module, "incident_queue", queue):
+            asyncio.run(  # 不抛异常, 任务留给 XAUTOCLAIM
+                worker._handle_failure(
+                    "msg-1", {"task_id": "task-1"}, "task-1", RuntimeError("x")
+                )
+            )
+        repo.mark_task_retry_pending.assert_not_awaited()
+
     def test_requeue_scan_failure_does_not_raise(self) -> None:
         import app.diagnosis_worker as worker_module
         from app.diagnosis_worker import DiagnosisWorker

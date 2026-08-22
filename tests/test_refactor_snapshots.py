@@ -111,8 +111,8 @@ class ApiSurfaceSnapshotTests(unittest.TestCase):
 class ConfigSurfaceSnapshotTests(unittest.TestCase):
     """守住配置重排: env 名和默认值都不允许变."""
 
-    FIELD_COUNT = 148
-    DEFAULTS_DIGEST = "b0c7a6d09e5dd25b"
+    FIELD_COUNT = 149
+    DEFAULTS_DIGEST = "74a1f63082b7a3c9"
 
     def test_settings_field_inventory_is_stable(self) -> None:
         from app.config import Settings

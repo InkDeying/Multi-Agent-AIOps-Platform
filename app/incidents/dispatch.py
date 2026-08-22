@@ -34,13 +34,17 @@ async def dispatch_diagnosis_task(
     priority: int,
     payload: dict[str, Any],
     level: str | None = None,
+    stale_claim_sec: int = 0,
 ) -> str | None:
     """把一个 pending 任务投递进 Redis Stream, 返回 message id.
 
     返回 None 表示没有投递 (claim 被竞争方持有, 或 XADD 失败已释放占位);
     调用方应如实上报 enqueued=False, 任务留给补偿扫描兜底, 不会丢失。
+    stale_claim_sec 语义见 claim_task_enqueue (仅补偿扫描方需要传)。
     """
-    claimed = await incident_repository.claim_task_enqueue(task_id)
+    claimed = await incident_repository.claim_task_enqueue(
+        task_id, stale_claim_sec=stale_claim_sec
+    )
     if not claimed:
         logger.info(
             f"[dispatch] task={task_id} skip enqueue: "
@@ -66,13 +70,23 @@ async def dispatch_diagnosis_task(
         try:
             await incident_repository.release_task_enqueue_claim(task_id)
         except Exception as release_exc:
-            # 释放失败时占位标记会留在行上, 补偿扫描同样会把占位行视为可重投。
+            # 释放失败时占位标记留在行上; 超过补偿宽限期后,
+            # claim_task_enqueue(stale_claim_sec=...) 可以重新认领标记行。
             logger.warning(
                 f"[dispatch] task={task_id} release claim failed: {release_exc}"
             )
         return None
 
-    await incident_repository.set_task_queue_message(task_id, message_id)
+    try:
+        await incident_repository.set_task_queue_message(task_id, message_id)
+    except Exception as exc:
+        # XADD 已成功: 消息在队列里, 任务会被正常消费, 这里只是 DB 没记下
+        # message id。不能向上抛 (worker 重试路径会因此中断), 记警告即可;
+        # 行上的占位标记在任务转入 running/succeeded 后自然不再被扫描。
+        logger.warning(
+            f"[dispatch] task={task_id} XADD ok but record message id failed "
+            f"({type(exc).__name__}: {exc}); message={message_id} is in queue"
+        )
     return message_id
 
 
@@ -103,6 +117,9 @@ async def requeue_unqueued_pending_tasks(
             diagnosis_mode=str(row.get("diagnosis_mode") or "fast"),
             priority=int(row.get("priority") or 100),
             payload=payload,
+            # 允许重新认领 "占位标记停留超过宽限期" 的行 (释放失败/进程崩溃残留);
+            # 扫描条件已按 updated_at 过滤, 新鲜占不会被抢。
+            stale_claim_sec=grace_sec,
         )
         if message_id:
             requeued += 1

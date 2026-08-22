@@ -185,57 +185,70 @@ async def stream_chat(
             enabled=web_search,
         )
     )
+    # 从创建到两个 task 都被 await 之间隔着多个 yield 点: 客户端断开
+    # (GeneratorExit) 会跳过后续 await, 这里 finally 兜底取消, 不留孤儿
+    # 协程继续烧检索/联网配额 —— 与下方 runner_task 的收尾同一规则。
     try:
-        context, hits, sources, hits_meta = await retrieve_task
-    except Exception as exc:
-        logger.exception(f"[rag] 知识库检索失败, 启用降级: {exc}")
-        fallback = get_agent_harness().rag_fallback(stage="retrieve", exc=exc)
-        context = fallback["context"]
-        hits = 0
-        sources = fallback["sources"]
-        hits_meta = fallback["hits_meta"]
-        yield progress(
-            "retrieve_degraded",
-            "知识库检索降级",
-            fallback["event_data"]["error_type"],
-            mark_start=True,
-            data=fallback["event_data"],
-        )
-    if hits:
-        src_preview = ", ".join(dict.fromkeys(sources[:3])) if sources else ""
-        yield progress(
-            "retrieve_done",
-            f"检索完成, 命中 {hits} 个片段",
-            src_preview,
-            mark_start=True,
-            data=retrieval_data | {"hits": hits_meta, "pipeline": pipeline_text},
-        )
-    else:
-        yield progress(
-            "retrieve_done",
-            "知识库未命中相关内容",
-            "",
-            mark_start=True,
-            data=retrieval_data | {"hits": [], "pipeline": pipeline_text},
-        )
-
-    try:
-        web_context, web_sources, web_hits, web_skip_reason = await web_task
-    except Exception as exc:
-        logger.exception(f"[rag] 联网补充失败, 启用降级: {exc}")
-        fallback = get_agent_harness().web_fallback(stage="web", exc=exc)
-        web_context = fallback["context"]
-        web_sources = fallback["sources"]
-        web_hits = fallback["hits"]
-        web_skip_reason = fallback["skip_reason"]
-        if web_search:
+        try:
+            context, hits, sources, hits_meta = await retrieve_task
+        except Exception as exc:
+            logger.exception(f"[rag] 知识库检索失败, 启用降级: {exc}")
+            fallback = get_agent_harness().rag_fallback(stage="retrieve", exc=exc)
+            context = fallback["context"]
+            hits = 0
+            sources = fallback["sources"]
+            hits_meta = fallback["hits_meta"]
             yield progress(
-                "web_degraded",
-                "联网补充降级",
+                "retrieve_degraded",
+                "知识库检索降级",
                 fallback["event_data"]["error_type"],
                 mark_start=True,
                 data=fallback["event_data"],
             )
+        if hits:
+            src_preview = ", ".join(dict.fromkeys(sources[:3])) if sources else ""
+            yield progress(
+                "retrieve_done",
+                f"检索完成, 命中 {hits} 个片段",
+                src_preview,
+                mark_start=True,
+                data=retrieval_data | {"hits": hits_meta, "pipeline": pipeline_text},
+            )
+        else:
+            yield progress(
+                "retrieve_done",
+                "知识库未命中相关内容",
+                "",
+                mark_start=True,
+                data=retrieval_data | {"hits": [], "pipeline": pipeline_text},
+            )
+
+        try:
+            web_context, web_sources, web_hits, web_skip_reason = await web_task
+        except Exception as exc:
+            logger.exception(f"[rag] 联网补充失败, 启用降级: {exc}")
+            fallback = get_agent_harness().web_fallback(stage="web", exc=exc)
+            web_context = fallback["context"]
+            web_sources = fallback["sources"]
+            web_hits = fallback["hits"]
+            web_skip_reason = fallback["skip_reason"]
+            if web_search:
+                yield progress(
+                    "web_degraded",
+                    "联网补充降级",
+                    fallback["event_data"]["error_type"],
+                    mark_start=True,
+                    data=fallback["event_data"],
+                )
+    finally:
+        for pending_task in (retrieve_task, web_task):
+            if not pending_task.done():
+                pending_task.cancel()
+        for pending_task in (retrieve_task, web_task):
+            try:
+                await pending_task
+            except (asyncio.CancelledError, Exception):
+                pass
     if web_search:
         if web_hits:
             yield progress(
