@@ -4,63 +4,28 @@ GET /api/v1/skills
   -> 列出全部已注册 Skill 的元信息, 供前端展示 Playbook 库
 GET /api/v1/skills/{name}
   -> 查看单个 Skill 全文和支持文件索引
+GET /api/v1/skills/{name}/files
+  -> 读取 Skill 支持文件
+POST /api/v1/skills/reload
+  -> 重载 SkillRegistry (需 ADMIN_TOKEN)
 
 列表接口不返回 playbook 全文, 避免响应体过大.
+模型在 app/schemas/skill.py, registry 访问在 app/services/skill_service.py.
 """
 
-from typing import Any, List
-
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
 
 from app.schemas.common import ApiResponse
+from app.schemas.skill import (
+    SkillDetailData,
+    SkillFileData,
+    SkillListData,
+    summary_from_skill,
+)
 from app.api.security import require_admin_token
-from app.harness.skills import get_skill_registry, reload_skill_registry
+from app.services import skill_service
 
 router = APIRouter(prefix="/skills", tags=["skills"])
-
-
-class SkillSummary(BaseModel):
-    """Skill 给前端看的精简元信息."""
-
-    name: str = Field(..., description="Skill 唯一标识")
-    display_name: str = Field(..., description="人类可读名称")
-    description: str = Field(..., description="一句话适用场景")
-    category: str = Field(default="", description="分类")
-    platforms: List[str] = Field(default_factory=list, description="兼容平台")
-    tags: List[str] = Field(default_factory=list, description="标签")
-    triggers: List[str] = Field(default_factory=list, description="触发关键字")
-    allowed_tools: List[str] = Field(default_factory=list, description="允许调用的工具白名单")
-    risk_level: str = Field(..., description="风险等级: low / medium / high")
-    context: str = Field(default="inline", description="执行模式: inline / fork")
-    source_path: str | None = Field(default=None, description="源 SKILL.md 路径")
-    linked_files: List[str] = Field(default_factory=list, description="支持文件相对路径")
-
-
-class SkillListData(BaseModel):
-    """Skill 列表响应载荷."""
-
-    total: int = Field(..., description="Skill 总数")
-    skills: List[SkillSummary] = Field(default_factory=list, description="全部 Skill 元信息")
-
-
-class SkillDetailData(SkillSummary):
-    """单个 Skill 详情."""
-
-    playbook: str = Field(default="", description="SKILL.md Markdown body")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="扩展 metadata")
-
-
-class SkillFileData(BaseModel):
-    """Skill 支持文件内容."""
-
-    name: str = Field(..., description="Skill name")
-    path: str = Field(..., description="Skill 目录内的相对路径")
-    content: str = Field(default="", description="文件内容")
-
-
-def _summary_from_skill(skill) -> SkillSummary:
-    return SkillSummary(**skill.to_summary())
 
 
 @router.get(
@@ -73,8 +38,8 @@ def _summary_from_skill(skill) -> SkillSummary:
     ),
 )
 async def list_skills() -> ApiResponse[SkillListData]:
-    registry = get_skill_registry()
-    summaries = [_summary_from_skill(s) for s in registry.all()]
+    skills = skill_service.list_skills()
+    summaries = [summary_from_skill(s) for s in skills]
     return ApiResponse.success(
         data=SkillListData(total=len(summaries), skills=summaries),
         message=f"已加载 {len(summaries)} 个 Skill",
@@ -89,8 +54,8 @@ async def list_skills() -> ApiResponse[SkillListData]:
     dependencies=[Depends(require_admin_token)],
 )
 async def reload_skills() -> ApiResponse[SkillListData]:
-    registry = reload_skill_registry()
-    summaries = [_summary_from_skill(s) for s in registry.all()]
+    skills = skill_service.reload_skills()
+    summaries = [summary_from_skill(s) for s in skills]
     return ApiResponse.success(
         data=SkillListData(total=len(summaries), skills=summaries),
         message=f"已重新加载 {len(summaries)} 个 Skill",
@@ -104,7 +69,7 @@ async def reload_skills() -> ApiResponse[SkillListData]:
     description="返回单个 Skill 的元信息、playbook 全文和支持文件索引.",
 )
 async def get_skill(name: str) -> ApiResponse[SkillDetailData]:
-    skill = get_skill_registry().get(name.lower())
+    skill = skill_service.get_skill(name)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill not found: {name}")
     return ApiResponse.success(
@@ -127,9 +92,8 @@ async def get_skill_file(
     name: str,
     path: str = Query(default="SKILL.md", description="Skill 目录内相对路径"),
 ) -> ApiResponse[SkillFileData]:
-    registry = get_skill_registry()
     try:
-        content = registry.read_supporting_file(name.lower(), path)
+        content = skill_service.read_skill_file(name, path)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

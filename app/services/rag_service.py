@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
@@ -63,13 +63,6 @@ def _select_rag_tools() -> list:
         if get_meta(t.name).read_only and t.name not in _RAG_TOOL_EXCLUDE
     ]
     return selected
-
-
-def _supports_thinking(model_name: str) -> bool:
-    name = (model_name or "").lower()
-    return any(
-        tag in name for tag in ("qwen3", "qwen-plus", "qwen-max-latest", "qwq", "qvq")
-    )
 
 
 async def stream_chat(
@@ -310,10 +303,12 @@ async def stream_chat(
             "tools": [t.name for t in rag_tools] if tools_enabled else [],
         },
     )
-    llm_kwargs: dict[str, Any] = {"temperature": 0.3, "streaming": True}
-    if _supports_thinking(harness.rag_chat_model()):
-        llm_kwargs["extra_body"] = {"enable_thinking": True}
-    llm = get_chat_llm(model=harness.rag_chat_model(), **llm_kwargs)
+    llm = get_chat_llm(
+        model=harness.rag_chat_model(),
+        temperature=0.3,
+        streaming=True,
+        thinking=True,  # 是否真的开启由 harness 按 Provider/模型名单判断
+    )
 
     full_answer = ""
     input_tokens = output_tokens = total_tokens = 0

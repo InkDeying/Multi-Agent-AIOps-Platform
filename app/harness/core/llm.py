@@ -19,9 +19,18 @@ from app.config import settings
 from app.harness.core.llm_health import is_primary_llm_available
 
 
-def _requires_disable_thinking_for_non_streaming(model_name: str) -> bool:
-    normalized = model_name.lower()
-    return any(token in normalized for token in ("qwen3", "qwq", "qvq"))
+def supports_thinking(model_name: str) -> bool:
+    """模型是否支持 thinking 开关 (DashScope Qwen 系的 enable_thinking 参数).
+
+    这是"哪些模型支持思考模式"的**唯一名单**: 是否传 enable_thinking、
+    怎么传属于 Provider 适配, 全部收在本模块。上层 (services/agents) 不得
+    再复制此名单 —— 曾经 rag_service 复制过一份且与本处漂移。
+    """
+    normalized = (model_name or "").lower()
+    return any(
+        token in normalized
+        for token in ("qwen3", "qwen-plus", "qwen-max-latest", "qwq", "qvq")
+    )
 
 
 def _should_use_local_llm() -> bool:
@@ -66,6 +75,7 @@ def get_chat_llm(
     streaming: bool = False,
     timeout: Optional[float] = 60.0,
     max_retries: int = 2,
+    thinking: bool = False,
     **kwargs: Any,
 ) -> BaseChatModel:
     """获取 Chat 模型实例.
@@ -76,6 +86,9 @@ def get_chat_llm(
         streaming: 是否流式输出 (SSE 场景需开启)
         timeout: 超时秒数
         max_retries: 失败重试次数
+        thinking: 请求开启思考模式。仅对支持 thinking 开关的 DashScope 模型
+            生效 (见 supports_thinking); DeepSeek 的思考模式是另一套参数
+            (extra_body={"thinking": ...}), 本参数不作用于它; 本地模型忽略。
         **kwargs: 传给 ChatOpenAI 的额外参数
 
     Returns:
@@ -141,10 +154,15 @@ def get_chat_llm(
         )
 
     # ===== DashScope (默认) =====
-    if not streaming and _requires_disable_thinking_for_non_streaming(selected_model):
+    if supports_thinking(selected_model):
         extra_body = kwargs.get("extra_body") or {}
         if isinstance(extra_body, dict):
-            kwargs["extra_body"] = {**extra_body, "enable_thinking": False}
+            if thinking:
+                # 显式开启优先 (流式 RAG 聊天用); DeepSeek/本地分支在上游已剥离该参数
+                kwargs["extra_body"] = {**extra_body, "enable_thinking": True}
+            elif not streaming:
+                # 非流式必须显式关: 支持 thinking 的 Qwen 系非流式默认思考, 拿不到最终答案
+                kwargs["extra_body"] = {**extra_body, "enable_thinking": False}
 
     # 流式时让最后一帧携带 usage (input_tokens/output_tokens/total_tokens)
     if streaming:

@@ -216,6 +216,18 @@ class MilvusManager:
 # 知识库 collection 的元数据原语 (文档管理用)
 # ============================================================
 
+def expr_literal(value: str) -> str:
+    """把任意字符串转成安全的 Milvus 表达式字面量 (双引号包裹).
+
+    Milvus 表达式语法里字符串字面量以双引号包裹, 反斜杠和双引号必须转义。
+    所有拼进 expr 的动态字符串都必须经过这里: 不转义时, 文件名含 ``"`` 或
+    ``\\`` 会产生非法表达式 (文档无法删除), 也可被构造成逃逸字符串后追加
+    ``or`` 条件的表达式注入 (越权删除其他文档的 chunks)。
+    """
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def count_chunks_by_source(collection: Optional[str] = None) -> Dict[str, int]:
     """按 source 聚合各文档的 chunk 数 (source -> chunk_count).
 
@@ -248,7 +260,7 @@ def delete_chunks_by_source(source: str, collection: Optional[str] = None) -> in
     """
     name = collection or settings.milvus_collection
     rows = query_collection(
-        expr=f'source == "{source}"',
+        expr=f"source == {expr_literal(source)}",
         output_fields=["pk"],
         limit=_CHUNK_QUERY_LIMIT,
         name=name,
