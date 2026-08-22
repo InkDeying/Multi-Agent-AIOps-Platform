@@ -19,7 +19,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 
 from loguru import logger
@@ -39,15 +38,13 @@ from app.harness.wiki.file_lock import wiki_write_guard
 from app.harness.wiki.text_utils import (
     WIKILINK_RE,
     coerce_text,
+    format_index_line,
+    format_log_line,
+    is_index_line,
     parse_target,
     slug,
     tokenize,
 )
-
-
-def _now() -> str:
-    """返回 Wiki 流水使用的 UTC 日期."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
 def _read(path: Path) -> str:
@@ -70,19 +67,19 @@ def _write(path: Path, content: str) -> None:
 # ==================== index / log 维护 ====================
 
 def _update_index(page_ref: str, summary: str) -> None:
-    """把一行 `- [[page_ref]] — summary` 并入 index.md (同 ref 去重更新)。"""
-    summary = " ".join(str(summary or "").split())[:100] or page_ref
-    line = f"- [[{page_ref}]] — {summary}"
-    body = [ln for ln in _read(WIKI_INDEX_FILE).splitlines() if ln.startswith("- [[")]
+    """把一行目录项并入 index.md (同 ref 去重更新); 行格式见 text_utils."""
+    line = format_index_line(page_ref, summary)
+    body = [ln for ln in _read(WIKI_INDEX_FILE).splitlines() if is_index_line(ln)]
     body = [ln for ln in body if f"[[{page_ref}]]" not in ln]
     body.append(line)
     _write(WIKI_INDEX_FILE, "# Wiki 目录\n\n" + "\n".join(sorted(body)))
 
 
 def _append_log(entry: str) -> None:
-    """append-only 流水, 每行 `## [date] entry` (原版 log.md 约定, 可被 unix 工具解析)。"""
-    line = f"## [{_now()}] {' '.join(str(entry or '').split())}"
-    _write(WIKI_LOG_FILE, (_read(WIKI_LOG_FILE).rstrip("\n") + "\n" + line) if _read(WIKI_LOG_FILE) else line)
+    """append-only 流水 (原版 log.md 约定, 可被 unix 工具解析); 行格式见 text_utils."""
+    line = format_log_line(entry)
+    existing = _read(WIKI_LOG_FILE)
+    _write(WIKI_LOG_FILE, (existing.rstrip("\n") + "\n" + line) if existing else line)
 
 
 # ==================== 写: ingest 一次诊断 ====================
@@ -137,7 +134,7 @@ async def ingest_diagnosis(
                 # LLM 不可用 -> 确定性兜底: 把本次诊断追加进 pattern 页 (退化成 append, 但闭环不断)
                 logger.warning(f"[wiki] LLM 合并失败, 走确定性兜底: {type(exc).__name__}: {exc}")
                 svc_md = existing_svc
-                entry = f"\n## [{_now()}] {mode}\n- 现象: {str(query or '')[:200]}\n"
+                entry = f"\n{format_log_line(mode)}\n- 现象: {str(query or '')[:200]}\n"
                 pat_md = ((existing_pat.rstrip() + entry) if existing_pat else f"# 故障模式: {pat}\n{entry}").strip()
                 index_summary = (query or pat)[:80]
                 log_line = f"{mode} | {pat}"
@@ -226,7 +223,7 @@ async def recall_block(*, query: str = "", signature: str = "", limit_chars: int
 def lint() -> dict[str, list[str]]:
     """结构健康检查 (原版 lint 的确定性子集): 孤页 / 未入 index / 空页。
 
-    LLM 版的"矛盾/过期"检查留作 scripts/wiki_lint.py 的可选增强。
+    LLM 版的"矛盾/过期"检查留作后续可选增强脚本。
     """
     findings: dict[str, list[str]] = {"orphan": [], "not_in_index": [], "empty": []}
     if not WIKI_DIR.exists():

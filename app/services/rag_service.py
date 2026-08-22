@@ -18,7 +18,7 @@ from typing import Any, AsyncIterator
 from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
 
-from app.harness.runtime.stream_sink import set_sink
+from app.harness.runtime.stream_sink import put_bounded, set_sink
 from app.config import settings
 from app.harness.websearch import get_provider as get_web_search_provider
 from app.harness.core.llm import get_chat_llm
@@ -326,7 +326,9 @@ async def stream_chat(
         # ContextVar set 在当前 task, asyncio.create_task 自动复制 context,
         # 所以 tool_runner 内部 emit() 拿得到这个 sink_q.
         sink_q: asyncio.Queue[dict] = asyncio.Queue(maxsize=2048)
-        set_sink(sink_q)
+        # 无损模式: 满队列阻塞生产者而不是丢 token (慢客户端只反压速度, 不截断答案);
+        # 消费循环 finally 会取消 runner, 保证生产者不会滞留在满队列的 emit 上。
+        set_sink(sink_q, block_on_full=True)
         sentinel = object()
 
         # 用 (role, content) 复用 run_parallel_agent 的输入约定. system 由它自动 prepend.
@@ -348,11 +350,10 @@ async def stream_chat(
                     max_parallel=policy.max_parallel,
                 )
             finally:
-                # 不论成功失败, 通知主循环退出消费
-                try:
-                    sink_q.put_nowait({"__sentinel__": sentinel})
-                except asyncio.QueueFull:
-                    pass
+                # 不论成功失败, 通知主循环退出消费。put_bounded: 消费者还在排空时
+                # 必然送达 (哨兵不会再被满队列吞掉); 消费者已退出时超时放弃,
+                # 不会把 runner 永久卡在 finally 里。
+                await put_bounded(sink_q, {"__sentinel__": sentinel})
 
         runner_task = asyncio.create_task(_runner())
         try:
@@ -420,13 +421,21 @@ async def stream_chat(
                 yield {"type": "token", "content": fallback}
         except Exception as exc:
             logger.exception(f"[rag] 工具回合主循环异常: {exc}")
-            if not runner_task.done():
-                runner_task.cancel()
             yield {
                 "type": "error",
                 "message": f"工具回合失败: {type(exc).__name__}: {exc}",
             }
             return
+        finally:
+            # 覆盖所有退出路径 (含客户端断开触发的 GeneratorExit —— 它不走上面
+            # 的 except Exception): 不留孤儿 runner。无损 sink 模式下 runner 可能
+            # 正阻塞在满队列的 emit 上, 只有取消能让它退出。
+            if not runner_task.done():
+                runner_task.cancel()
+            try:
+                await runner_task
+            except (asyncio.CancelledError, Exception):
+                pass
 
         if total_tokens == 0:
             total_tokens = input_tokens + output_tokens

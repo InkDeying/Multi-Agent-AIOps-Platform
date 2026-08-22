@@ -206,7 +206,9 @@ Redis 保存运行态队列、Consumer Group、Worker 心跳、全局并发槽�
 ### LLM Wiki
 
 `data/wiki/` 保存运行时经验。除 `CONVENTIONS.md` 外的内容由 `.gitignore` 排除，因为其中可能包含
-真实事件信息。不能把运行时 Wiki 当作可公开提交的普通文档。
+真实事件信息。不能把运行时 Wiki 当作可公开提交的普通文档。`log.md` 流水行与 `index.md` 目录行的
+格式由 `app/harness/wiki/text_utils.py` 单一定义，写端 ingest 与读端查询 API 共用同一组
+render/parse 函数，并有往返测试防止读写两端漂移。
 
 ## 7. 并发和失败恢复
 

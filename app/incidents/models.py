@@ -34,17 +34,6 @@ class DiagnosisTaskStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
-class AgentRunStatus(StrEnum):
-    """AgentRun 的生命周期状态契约，供后续审计模型复用。"""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    TIMEOUT = "timeout"
-    CANCELLED = "cancelled"
-
-
 class NormalizedAlert(BaseModel):
     """Canonical alert shape stored before correlation."""
 

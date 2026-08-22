@@ -15,7 +15,7 @@ from typing import Any
 
 from loguru import logger
 
-from app.harness.runtime.stream_sink import set_sink
+from app.harness.runtime.stream_sink import put_bounded, set_sink
 from app.harness.runtime.agent_harness import HarnessUsageStats, get_agent_harness
 from app.harness.wiki.store import ingest_diagnosis
 from app.incidents.models import DiagnosisMode
@@ -202,7 +202,9 @@ async def run_diagnosis_graph(
         except Exception as exc:
             await token_queue.put({"__error__": exc})
         finally:
-            await token_queue.put(done_sentinel)
+            # put_bounded: 消费方还在排空时哨兵必然送达; 消费方已退出 (客户端断开)
+            # 时超时放弃, 不会把 graph runner 永久卡在满队列的 finally 里。
+            await put_bounded(token_queue, done_sentinel)
 
     runner_task = asyncio.create_task(_graph_runner())
 

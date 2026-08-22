@@ -9,8 +9,8 @@ from typing import Any
 
 from app.config import settings
 from app.db.wiki_storage import WIKI_DIR
+from app.harness.wiki.text_utils import parse_log_line
 
-_LOG_LINE_RE = re.compile(r"^## \[(?P<date>\d{4}-\d{2}-\d{2})\]\s*(?P<body>.*)$")
 _CATEGORIES = ("services", "patterns")
 
 
@@ -99,15 +99,10 @@ def get_log(limit: int) -> dict[str, Any]:
         return {"count": 0, "items": []}
     entries: list[dict[str, Any]] = []
     for line in reversed(path.read_text(encoding="utf-8").splitlines()):
-        match = _LOG_LINE_RE.match(line.strip())
-        if not match:
+        parsed = parse_log_line(line)
+        if parsed is None:
             continue
-        entries.append(
-            {
-                "date": match.group("date"),
-                "entry": match.group("body").strip(),
-            }
-        )
+        entries.append(parsed)
         if len(entries) >= limit:
             break
     return {"count": len(entries), "items": entries}

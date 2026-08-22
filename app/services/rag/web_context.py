@@ -3,7 +3,7 @@
 策略:
   - 联网仅允许搜索 "前面诊断报告里出现过的实体/术语" (white-list by reference)
   - 命中黑名单 / 敏感词直接拒
-  - 真正的 provider 调度走 app.web_search
+  - 真正的 provider 调度走 app.harness.websearch (app.web_search 只是兼容壳)
 """
 
 from __future__ import annotations
