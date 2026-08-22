@@ -43,7 +43,7 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
     ports:
-      - "9001:9001"
+      - "127.0.0.1:9001:9001"
     volumes:
       - multi_agent_minio:/minio_data
     command: minio server /minio_data --console-address ":9001"
@@ -72,8 +72,8 @@ services:
       timeout: 20s
       retries: 3
     ports:
-      - "19530:19530"
-      - "9091:9091"
+      - "127.0.0.1:19530:19530"
+      - "127.0.0.1:9091:9091"
     depends_on:
       - "etcd"
       - "minio"
@@ -85,7 +85,7 @@ services:
     environment:
       MILVUS_URL: standalone:19530
     ports:
-      - "9100:3000"
+      - "127.0.0.1:9100:3000"
     depends_on:
       - "standalone"
 
@@ -94,7 +94,7 @@ services:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - multi_agent_redis:/data
     healthcheck:
@@ -112,7 +112,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-multi_agent}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-multi_agent}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - multi_agent_postgres:/var/lib/postgresql/data
     healthcheck:
@@ -134,7 +134,7 @@ services:
       CORS_ORIGIN: "*"
     command: ["node", "build/index.js", "serve", "--host", "0.0.0.0", "--port", "3310"]
     ports:
-      - "${OPEN_WEBSEARCH_PORT:-3310}:3310"
+      - "127.0.0.1:${OPEN_WEBSEARCH_PORT:-3310}:3310"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3310/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
@@ -155,7 +155,7 @@ services:
       - .env
     command: ["python", "mcp_servers/system_server.py"]
     ports:
-      - "9105:9105"
+      - "127.0.0.1:9105:9105"
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 9105), 2); s.close()"]
       interval: 10s
@@ -174,7 +174,7 @@ services:
       OPEN_WEBSEARCH_BASE_URL: http://open-websearch:3310
     command: ["python", "mcp_servers/websearch_server.py"]
     ports:
-      - "9106:9106"
+      - "127.0.0.1:9106:9106"
     depends_on:
       open-websearch:
         condition: service_healthy
@@ -194,7 +194,7 @@ services:
       - .env
     command: ["python", "mcp_servers/winlog_server.py"]
     ports:
-      - "9108:9108"
+      - "127.0.0.1:9108:9108"
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 9108), 2); s.close()"]
       interval: 10s
@@ -211,7 +211,7 @@ services:
       - .env
     command: ["python", "mcp_servers/network_server.py"]
     ports:
-      - "9109:9109"
+      - "127.0.0.1:9109:9109"
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 9109), 2); s.close()"]
       interval: 10s
@@ -228,7 +228,7 @@ services:
       - .env
     command: ["python", "mcp_servers/docker_server.py"]
     ports:
-      - "9111:9111"
+      - "127.0.0.1:9111:9111"
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 9111), 2); s.close()"]
       interval: 10s
@@ -258,7 +258,7 @@ services:
       MCP_DOCKER_URL: http://mcp-docker:9111/mcp
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9900", "--workers", "4"]
     ports:
-      - "${APP_PORT:-9900}:9900"
+      - "127.0.0.1:${APP_PORT:-9900}:9900"
     volumes:
       - ./benchmark/reports:/app/benchmark/reports:ro
       - ./data/wiki:/app/data/wiki

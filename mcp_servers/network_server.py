@@ -10,6 +10,7 @@
 读模式: 只读, 不修改任何网络配置.
 """
 
+import ipaddress
 import socket
 import subprocess
 import time
@@ -21,25 +22,41 @@ from fastmcp import FastMCP
 mcp = FastMCP(name="NetworkServer")
 
 
-# 主机黑名单 (避免被 prompt 注入扫描内网/敏感主机)
-_HOST_BLOCKLIST_PREFIXES = (
-    "10.",  # 内网 A
-    "192.168.",  # 内网 C
-    "172.",  # 部分内网 B (粗略)
-    "127.",  # 本地回环
-    "0.",
-    "169.254.",  # 链路本地
-)
+def _ip_is_blocked(ip_text: str) -> bool:
+    """按地址类别判定是否内网/保留地址 (ipaddress 覆盖 IPv4/IPv6 全部编码形式)."""
+    try:
+        ip = ipaddress.ip_address(ip_text)
+    except ValueError:
+        return True  # 解析不出的地址一律拒绝
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
 
 
-def _is_blocked_ip(host: str) -> bool:
-    """简单黑名单. 注: 仅当 host 看起来已经是 IP 时才拦, 域名先放过 (会在解析后再判)."""
-    parts = host.split(".")
-    if len(parts) == 4 and all(p.isdigit() for p in parts):
-        for prefix in _HOST_BLOCKLIST_PREFIXES:
-            if host.startswith(prefix):
-                return True
-    return False
+def _host_is_blocked(host: str) -> tuple[bool, str]:
+    """解析后复判: 对 host 的**每一个**解析结果做内网检查.
+
+    只拦 "看起来像 IP" 的字面前缀是可绕过的 —— 域名、IPv6、十六进制/整数
+    编码 (http://0x7f000001) 都能绕开字面黑名单。这里先 getaddrinfo 解析,
+    任一解析结果命中内网/保留段即整体拒绝, 与注释宣称的行为一致。
+    """
+    host = (host or "").strip("[]")
+    if not host:
+        return True, "host 为空"
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as exc:
+        return True, f"DNS 解析失败: {exc}"
+    for info in infos:
+        addr = info[4][0]
+        if _ip_is_blocked(addr):
+            return True, f"解析到内网/保留地址 {addr}"
+    return False, ""
 
 
 @mcp.tool(
@@ -55,8 +72,9 @@ def ping_host(host: str, count: int = 4) -> str:
     host = (host or "").strip()
     if not host:
         return "[拒绝] host 不能为空"
-    if _is_blocked_ip(host):
-        return f"[拒绝] {host} 是内网/回环地址, 不允许 ping"
+    blocked, reason = _host_is_blocked(host)
+    if blocked:
+        return f"[拒绝] {host} 不允许 ping ({reason})"
     count = max(1, min(int(count or 4), 10))
 
     try:
@@ -82,7 +100,7 @@ def ping_host(host: str, count: int = 4) -> str:
     name="http_check",
     description=(
         "对一个 HTTP/HTTPS URL 发起 GET 请求, 返回状态码 / 响应时间 / 响应头摘要. "
-        "用于检查网站/接口可用性. 默认 10s 超时, 不跟随重定向超过 5 次."
+        "用于检查网站/接口可用性. 默认 10s 超时, 不跟随重定向 (防重定向跳内网)."
     ),
 )
 def http_check(url: str, timeout_sec: float = 10.0) -> str:
@@ -94,15 +112,22 @@ def http_check(url: str, timeout_sec: float = 10.0) -> str:
 
     parsed = urlparse(url)
     host = parsed.hostname or ""
-    if _is_blocked_ip(host):
-        return f"[拒绝] {host} 是内网/回环地址, 不允许 http_check"
+    blocked, reason = _host_is_blocked(host)
+    if blocked:
+        return f"[拒绝] {host} 不允许 http_check ({reason})"
 
     timeout_sec = max(1.0, min(float(timeout_sec or 10.0), 30.0))
 
     start = time.time()
     try:
-        with httpx.Client(timeout=timeout_sec, follow_redirects=True) as client:
+        # 不跟随重定向: 跟随后的每一跳都可能指向内网 (且无法逐跳复判)
+        with httpx.Client(timeout=timeout_sec, follow_redirects=False) as client:
             resp = client.get(url, headers={"User-Agent": "OnCall-Agent/1.0"})
+        if resp.has_redirect_location:
+            return (
+                f"## HTTP Check {url}\n"
+                f"- status: {resp.status_code} (重定向到 {resp.headers.get('location')}, 未跟随)"
+            )
         elapsed_ms = int((time.time() - start) * 1000)
     except httpx.TimeoutException:
         return f"[失败] {url} 请求超时 (>{timeout_sec}s)"
@@ -135,6 +160,9 @@ def dns_lookup(domain: str) -> str:
     domain = (domain or "").strip()
     if not domain:
         return "[拒绝] domain 不能为空"
+    blocked, reason = _host_is_blocked(domain)
+    if blocked:
+        return f"[拒绝] {domain} 不允许解析 ({reason})"
     try:
         start = time.time()
         infos = socket.getaddrinfo(domain, None, family=socket.AF_INET)
@@ -158,8 +186,9 @@ def check_port(host: str, port: int, timeout_sec: float = 3.0) -> str:
     host = (host or "").strip()
     if not host or not port:
         return "[拒绝] host 和 port 都不能为空"
-    if _is_blocked_ip(host):
-        return f"[拒绝] {host} 是内网/回环地址, 不允许扫描"
+    blocked, reason = _host_is_blocked(host)
+    if blocked:
+        return f"[拒绝] {host} 不允许扫描 ({reason})"
     port = int(port)
     if not (1 <= port <= 65535):
         return f"[拒绝] port 必须在 1-65535, 收到: {port}"
