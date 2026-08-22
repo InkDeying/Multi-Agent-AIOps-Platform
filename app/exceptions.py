@@ -60,13 +60,6 @@ class NotFoundError(AppException):
     message = "资源不存在"
 
 
-class DocumentNotFoundError(NotFoundError):
-    """文档不存在."""
-
-    code = "DOCUMENT_NOT_FOUND"
-    message = "文档不存在"
-
-
 class UnsupportedFileTypeError(BadRequestError):
     """不支持的文件类型."""
 
@@ -97,25 +90,3 @@ class EmbeddingError(ServiceError):
 
     code = "EMBEDDING_ERROR"
     message = "文本向量化失败"
-
-
-class LLMError(ServiceError):
-    """LLM 调用错误."""
-
-    code = "LLM_ERROR"
-    message = "大模型调用失败"
-
-
-class MCPConnectionError(ServiceError):
-    """MCP 服务连接错误."""
-
-    status_code = 503
-    code = "MCP_CONNECTION_ERROR"
-    message = "MCP 服务不可用"
-
-
-class AgentExecutionError(ServiceError):
-    """Agent 执行错误."""
-
-    code = "AGENT_EXECUTION_ERROR"
-    message = "智能体执行失败"

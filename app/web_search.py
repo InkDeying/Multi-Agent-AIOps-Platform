@@ -8,20 +8,12 @@
 
 from app.harness.websearch import (  # noqa: F401
     format_results,
-    get_open_websearch_config,
     get_provider,
     search,
-    search_ddgs,
-    search_mock,
-    search_open_websearch,
 )
 
 __all__ = [
     "format_results",
-    "get_open_websearch_config",
     "get_provider",
     "search",
-    "search_ddgs",
-    "search_mock",
-    "search_open_websearch",
 ]

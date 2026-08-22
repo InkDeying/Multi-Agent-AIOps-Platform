@@ -85,22 +85,3 @@ def is_primary_llm_available(force_refresh: bool = False) -> bool:
         _last_probe_time = now
 
     return _last_probe_result
-
-
-def is_local_llm_available() -> bool:
-    """探测本地 LLM (Ollama) 是否可达."""
-    host, port = _extract_host_port(
-        settings.local_llm_base_url, default_port=11434
-    )
-    return _do_probe(host, port, timeout=2.0)
-
-
-def reset_probe_cache() -> None:
-    """清空探测缓存, 下次调用 is_primary_llm_available() 会强制重新探测.
-
-    主要用于测试.
-    """
-    global _last_probe_time, _last_probe_result
-    with _lock:
-        _last_probe_time = 0.0
-        _last_probe_result = True

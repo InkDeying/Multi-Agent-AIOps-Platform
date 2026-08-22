@@ -1,6 +1,6 @@
 """AIOps 多智能体接口的数据模型."""
 
-from typing import Any, Dict, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -66,12 +66,3 @@ EventType = Literal[
     "complete",        # 流程结束
     "error",           # 错误
 ]
-
-
-class DiagnosisEvent(BaseModel):
-    """诊断 SSE 事件 (示例 schema)."""
-
-    type: EventType = Field(..., description="事件类型")
-    stage: str = Field(..., description="阶段标识")
-    message: str = Field(default="", description="人类可读的描述")
-    data: Dict[str, Any] = Field(default_factory=dict, description="结构化数据载荷")

@@ -364,11 +364,6 @@ def get_meta(tool_name: str) -> ToolMeta:
     return TOOL_META.get(tool_name, _CONSERVATIVE_DEFAULT)
 
 
-def is_registered(tool_name: str) -> bool:
-    """判断工具是否在中央注册表中显式登记 (排除保守默认兜底)."""
-    return tool_name in TOOL_META
-
-
 def register_tool_meta(tool_name: str, meta: ToolMeta, *, override: bool = False) -> None:
     """运行时补登记元数据 (例如 MCP 工具加载完成后).
 
@@ -396,26 +391,3 @@ def warn_unregistered_tools(tool_names: list[str]) -> list[str]:
             f"{sorted(missing)}. 请在 app/harness/tools/meta.py 补登记, 否则会影响并行编排和 PermissionMode 决策."
         )
     return missing
-
-
-def summarize_registry() -> dict:
-    """生成注册表汇总 (用于 /api 健康检查或启动日志).
-
-    Returns:
-        dict: 各 risk_level / read_only / concurrency_safe 的工具数和示例.
-    """
-    by_risk: Dict[str, list[str]] = {"low": [], "medium": [], "high": []}
-    read_only_count = 0
-    concurrency_safe_count = 0
-    for name, meta in TOOL_META.items():
-        by_risk[meta.risk_level].append(name)
-        if meta.read_only:
-            read_only_count += 1
-        if meta.concurrency_safe:
-            concurrency_safe_count += 1
-    return {
-        "total_registered": len(TOOL_META),
-        "read_only": read_only_count,
-        "concurrency_safe": concurrency_safe_count,
-        "by_risk": {k: sorted(v) for k, v in by_risk.items()},
-    }

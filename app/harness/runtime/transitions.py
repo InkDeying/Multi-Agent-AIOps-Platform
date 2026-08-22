@@ -52,12 +52,7 @@ REPLANNER_REROUTE_BLOCKED = "replanner_reroute_blocked"  # LLM 想 reroute 但�
 
 # === Permission (留给 §1 在 tool_runner 里发) ===
 PERMISSION_DENIED = "permission_denied"
-PERMISSION_ASK_TIMEOUT = "permission_ask_timeout"
-PERMISSION_ASK_REJECTED = "permission_ask_rejected"
 
-# === Subagent (deep graph 专业 Agent 委派) ===
-SUBAGENT_DELEGATED = "subagent_delegated"
-SUBAGENT_FAILED = "subagent_failed"
 
 # === Deep Diagnosis (群聊 / M7 多 Agent 组诊断) ===
 DEEP_INCIDENT_LOADED = "deep_incident_loaded"          # IncidentManager 载入诊断对象
@@ -68,7 +63,6 @@ DEEP_EVIDENCE_REDUCED = "deep_evidence_reduced"        # EvidenceReducer 归并�
 DEEP_RCA_JUDGED = "deep_rca_judged"                    # RCAJudge 定根因
 DEEP_REMEDIATION_PLANNED = "deep_remediation_planned"  # RemediationPlanner 出处置 (待人工确认)
 DEEP_REPORT_DONE = "deep_report_done"                  # ReportAgent 出报告
-DEEP_STUB = "deep_stub"                                # 节点尚为 stub, 真实逻辑未实现
 
 
 # ============================================================

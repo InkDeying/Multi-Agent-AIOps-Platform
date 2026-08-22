@@ -48,19 +48,6 @@ def _tool_risk(tool_name: str) -> RiskLevel:
 # 旧版静态 Guardrails 检查 (向后兼容)
 # 新代码请用 evaluate_permission()
 # ============================================================
-def _is_tool_allowed_by_guardrails(tool_name: str) -> bool:
-    """[已替代] 仅静态检查高危/通知黑名单, 不考虑 Mode.
-
-    替代品: app.harness.runtime.permissions.evaluate_permission()
-    保留原因: smoke_tool_meta.py 的 backward-compat 测试.
-    """
-    if settings.guardrails_block_high_risk_tools and tool_name in HIGH_RISK_TOOLS:
-        return False
-    if not settings.guardrails_allow_notification_tools and tool_name in NOTIFICATION_TOOLS:
-        return False
-    return True
-
-
 # ============================================================
 # 主入口: 给 Executor 用
 # ============================================================

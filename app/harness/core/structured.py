@@ -17,10 +17,6 @@ from app.harness.core.llm_parse import content_to_text, extract_json
 T = TypeVar("T", bound=BaseModel)
 
 
-def is_deepseek_model(model: str | None) -> bool:
-    return bool((model or "").lower().startswith("deepseek"))
-
-
 def _schema_hint(schema_cls: type[BaseModel]) -> str:
     schema = schema_cls.model_json_schema()
     props = schema.get("properties", {})

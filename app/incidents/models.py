@@ -14,24 +14,9 @@ class AlertStatus(StrEnum):
     RESOLVED = "resolved"
 
 
-class IncidentStatus(StrEnum):
-    OPEN = "open"
-    MITIGATED = "mitigated"
-    CLOSED = "closed"
-    SUPPRESSED = "suppressed"
-
-
 class DiagnosisMode(StrEnum):
     FAST = "fast"
     DEEP = "deep"
-
-
-class DiagnosisTaskStatus(StrEnum):
-    PENDING = "pending"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
 
 
 class NormalizedAlert(BaseModel):
@@ -69,21 +54,3 @@ class IncidentIngestResult(BaseModel):
 
     复用 running 任务 / 已带队列消息的 pending 任务时为 False, 避免重复投递。
     """
-
-
-class DiagnosisTaskRecord(BaseModel):
-    id: str
-    incident_group_id: str
-    incident_id: str
-    status: DiagnosisTaskStatus
-    priority: int = 100
-    diagnosis_mode: DiagnosisMode = DiagnosisMode.FAST
-    queue_message_id: str = ""
-    attempts: int = 0
-    max_attempts: int = 3
-    payload: dict[str, Any] = Field(default_factory=dict)
-    error: str = ""
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    claimed_at: datetime | None = None
-    finished_at: datetime | None = None

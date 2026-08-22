@@ -52,10 +52,6 @@ def set_step(iteration: int) -> None:
     _step_var.set(iteration)
 
 
-def get_step() -> int:
-    return _step_var.get()
-
-
 _miss_count = 0
 _emit_count = 0
 

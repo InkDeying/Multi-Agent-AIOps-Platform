@@ -242,7 +242,3 @@ def get_prom_tools() -> List[Any]:
     if not settings.prometheus_url:
         return []
     return [prom_query, prom_query_range, prom_active_alerts, prom_label_values]
-
-
-def is_configured() -> bool:
-    return bool(settings.prometheus_url)

@@ -110,14 +110,6 @@ async def get_messages(session_id: str) -> list[dict[str, Any]]:
         return []
 
 
-async def get_recent_messages(session_id: str, turns: int | None = None) -> list[dict[str, Any]]:
-    messages = await get_messages(session_id)
-    keep = max(0, (turns or settings.rag_chat_history_turns) * 2)
-    if keep <= 0:
-        return []
-    return messages[-keep:]
-
-
 async def append_message(
     session_id: str,
     *,

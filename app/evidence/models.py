@@ -34,8 +34,3 @@ class EvidenceCreate(BaseModel):
     score: float | None = None
     occurred_at: datetime | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class EvidenceRecord(EvidenceCreate):
-    id: str
-    created_at: datetime | None = None

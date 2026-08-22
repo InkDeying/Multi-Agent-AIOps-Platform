@@ -157,7 +157,7 @@ def evaluate_permission(
                 suggestions=["允许一次", "本会话总是允许", "拒绝"],
             )
 
-    # ---- Layer 2: 静态 Guardrails (与原 _is_tool_allowed_by_guardrails 等价) ----
+    # ---- Layer 2: 静态 Guardrails (高危/通知黑名单, 不考虑 Mode) ----
     if block_high_risk and tool_name in HIGH_RISK_TOOLS:
         return PermissionDecision(
             behavior="deny",
